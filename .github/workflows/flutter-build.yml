@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Java 17
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
@@ -25,11 +25,11 @@ jobs:
           channel: 'stable'
           cache: true
 
-      # 1. Bersihkan folder android lama (jika ada sisa kotor)
+      # 1. Bersihkan folder android lama
       - name: Clean Android Folder
         run: rm -rf android
 
-      # 2. Generate ulang folder Android (V2 Embedding)
+      # 2. Generate ulang folder Android
       - name: Create Android Platform
         run: flutter create . --project-name=komitan_kutter --org=com.komitan
 
@@ -69,11 +69,30 @@ jobs:
           </manifest>
           EOF
 
-      # 4. [WAJIB] Paksa minSdkVersion 24 untuk FFmpeg
-      - name: Force minSdkVersion 24
+      # 4. [FIX UTAMA] Paksa Versi SDK & Kotlin
+      # Kita mengubah file build.gradle secara otomatis menggunakan 'sed'
+      - name: Force Configure Android Versions (SDK 35 & Kotlin 1.9)
         run: |
+          echo "Updating Android build configuration..."
+          
+          # 1. Update Kotlin Version di android/build.gradle (Root)
+          # Mengganti versi default (biasanya 1.7.10) menjadi 1.9.24
+          sed -i "s/ext.kotlin_version = '.*'/ext.kotlin_version = '1.9.24'/" android/build.gradle
+          
+          # 2. Update CompileSDK & TargetSDK ke 35 di android/app/build.gradle (App)
+          # Wajib untuk ffmpeg_kit_flutter_new
+          sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 35/' android/app/build.gradle
+          sed -i 's/targetSdkVersion flutter.targetSdkVersion/targetSdkVersion 35/' android/app/build.gradle
+          
+          # 3. Update MinSDK ke 24
           sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 24/' android/app/build.gradle
           sed -i 's/minSdkVersion 21/minSdkVersion 24/' android/app/build.gradle || true
+
+          # Cek hasil perubahan (untuk debug di log)
+          echo "--- Root build.gradle (Kotlin Version) ---"
+          grep "kotlin_version" android/build.gradle
+          echo "--- App build.gradle (SDK Versions) ---"
+          grep "SdkVersion" android/app/build.gradle
 
       # 5. Install dependencies & Build
       - name: Install Dependencies
@@ -86,5 +105,5 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: KomitanKutter-Flutter-New-Fix
+          name: KomitanKutter-Flutter-Final
           path: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
