@@ -1,0 +1,44 @@
+name: Build Flutter APK
+
+on:
+  push:
+    branches: [ flutter-version ] # Hanya jalan di branch flutter
+  workflow_dispatch: # Tombol manual
+
+jobs:
+  build:
+    # [UPDATE] Dikunci ke Ubuntu 22.04 (Jammy) sesuai permintaan
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Java 17 sangat stabil di Ubuntu 22.04 untuk build Android
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      # Setup Flutter Stable
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.19.0'
+          channel: 'stable'
+          cache: true # Cache agar build berikutnya lebih cepat
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      # Build APK (Release Mode)
+      # split-per-abi membuat file lebih kecil (arm64-v8a terpisah)
+      - name: Build APK
+        run: flutter build apk --release --split-per-abi
+
+      # Upload APK Hasil (Khusus ARM64 yang dipakai 99% HP sekarang)
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: KomitanKutter-Flutter-Jammy
+          path: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk

@@ -1,0 +1,30 @@
+name: komitan_kutter
+description: Video Cutter Offline powered by FFmpeg-Kit
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # --- [Otak Pemotong] ---
+  # Versi GPL (lengkap dengan x264/x265)
+  ffmpeg_kit_flutter_full_gpl: ^6.0.3
+
+  # --- [Utilities] ---
+  file_picker: ^6.1.1      # Untuk pilih video
+  permission_handler: ^11.0.1 # Untuk izin storage
+  path_provider: ^2.1.1    # Untuk cari folder output
+  intl: ^0.18.1            # Untuk format tanggal
+  open_file: ^3.3.2        # Untuk buka hasil video
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^2.0.0
+
+flutter:
+  uses-material-design: true
