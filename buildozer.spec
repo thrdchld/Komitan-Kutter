@@ -15,7 +15,7 @@ requirements = python3==3.11.9,kivy,pyjnius==master,android
 orientation = portrait
 
 # [FIX] Mengambil resep p4a terbaru
-p4a.branch = master
+#p4a.branch = master
 
 [android]
 android.permissions = android.permission.READ_EXTERNAL_STORAGE, android.permission.WRITE_EXTERNAL_STORAGE, android.permission.INTERNET
