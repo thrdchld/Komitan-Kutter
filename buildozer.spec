@@ -20,7 +20,13 @@ orientation = portrait
 [android]
 android.permissions = android.permission.READ_EXTERNAL_STORAGE, android.permission.WRITE_EXTERNAL_STORAGE, android.permission.INTERNET
 
+# Minimal Android 7 
 android.minapi = 24
+
+# File ffmpeg
 android.add_aars = libs/ffmpeg-kit-full-gpl-6.0-2.LTS.aar
+
+# (str) Icon of the application
+icon.filename = %(source.dir)s/icon.png
 
 # Pastikan tidak ada baris 'services = ...' di sini
