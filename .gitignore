@@ -1,2 +1,4 @@
 .buildozer/
 bin/
+libs/
+*.aar

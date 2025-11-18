@@ -20,7 +20,7 @@ orientation = portrait
 [android]
 android.permissions = android.permission.READ_EXTERNAL_STORAGE, android.permission.WRITE_EXTERNAL_STORAGE, android.permission.INTERNET
 
-# [PENTING] Menyertakan 'spesialis' ffmpeg-kit
-android.gradle_dependencies = 'com.arthenica:ffmpeg-kit-full:5.1'
+android.minapi = 24
+android.add_aars = libs/ffmpeg-kit-full-gpl-6.0-2.LTS.aar
 
 # Pastikan tidak ada baris 'services = ...' di sini
