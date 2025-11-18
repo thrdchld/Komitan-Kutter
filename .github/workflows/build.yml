@@ -1,9 +1,15 @@
-name: Build Komitan Kutter APK
+name: Build Komitan Kutter APK (Manual)
 
+# --- PENGATURAN TRIGGER ---
 on:
-  push:
-    branches: [ main ]
+  # Trigger manual saja (Tombol 'Run workflow')
   workflow_dispatch:
+  
+  # Jika suatu saat Anda ingin mengaktifkan auto-run lagi saat push tag (misal v1.0),
+  # hilangkan tanda pagar di bawah ini:
+  # push:
+  #   tags:
+  #     - 'v*'
 
 jobs:
   build:
@@ -20,13 +26,13 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      # 2. Setup Python 3.11 (Stabil)
+      # 2. Setup Python 3.11 (Versi stabil untuk Buildozer)
       - name: Setup Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      # 3. Install Dependencies Sistem
+      # 3. Install Dependencies Sistem (Fix error libtool/LT_SYS_SYMBOL_USCORE)
       - name: Install System Dependencies
         run: |
           sudo apt-get update
@@ -40,26 +46,33 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install buildozer
+          # Cython versi ini mencegah error 'long' di pyjnius
           pip install "cython==0.29.36"
 
-      # 5. [UPDATE] Download Manual FFmpeg-Kit GPL 6.0
-      # Menggunakan link dari Anda dan menyimpannya dengan nama yang sesuai buildozer.spec
-      - name: Download FFmpeg-Kit Library (GPL 6.0)
+      # 5. [PENTING] Download Manual FFmpeg-Kit GPL 6.0 ke folder libs/
+      # Pastikan buildozer.spec Anda mengarah ke: libs/ffmpeg-kit-full-gpl-6.0-2.LTS.aar
+      - name: Download FFmpeg-Kit Library (GPL 6.0) to libs/
         run: |
-          echo "Downloading FFmpeg-Kit GPL 6.0..."
-          wget https://artifactory.appodeal.com/appodeal-public/com/arthenica/ffmpeg-kit-full-gpl/6.0-2.LTS/ffmpeg-kit-full-gpl-6.0-2.LTS.aar -O ffmpeg-kit-full-gpl-6.0-2.LTS.aar
+          # Buat folder libs dulu
+          mkdir -p libs
           
-          # Cek ukuran file untuk memastikan download sukses (harus sekitar 50-70MB)
-          ls -lh ffmpeg-kit-full-gpl-6.0-2.LTS.aar
+          echo "Downloading FFmpeg-Kit GPL 6.0..."
+          # Download dan simpan langsung ke dalam folder libs dengan nama yang benar
+          wget https://artifactory.appodeal.com/appodeal-public/com/arthenica/ffmpeg-kit-full-gpl/6.0-2.LTS/ffmpeg-kit-full-gpl-6.0-2.LTS.aar -O libs/ffmpeg-kit-full-gpl-6.0-2.LTS.aar
+          
+          # Verifikasi file ada
+          ls -lh libs/
 
       # 6. Jalankan Buildozer
       - name: Build APK
         run: |
+          # Pastikan PATH benar untuk tool python lokal
           export PATH=~/.local/bin:$PATH
-          # 'yes' command otomatis menjawab 'y' untuk license agreements
+          
+          # 'yes' command otomatis menjawab 'y' untuk license agreements SDK
           yes | buildozer android debug
 
-      # 7. Upload APK hasil build
+      # 7. Upload APK hasil build ke halaman Actions
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
