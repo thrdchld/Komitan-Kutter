@@ -69,32 +69,39 @@ jobs:
           </manifest>
           EOF
 
-      # 4. [FIX UTAMA] Paksa Versi SDK & Kotlin
-      # Kita mengubah file build.gradle secara otomatis menggunakan 'sed'
+# 4. [FIXED] Paksa Versi SDK & Kotlin (Support New Flutter Structure)
       - name: Force Configure Android Versions (SDK 35 & Kotlin 1.9)
         run: |
           echo "Updating Android build configuration..."
-          
-          # 1. Update Kotlin Version di android/build.gradle (Root)
-          # Mengganti versi default (biasanya 1.7.10) menjadi 1.9.24
-          sed -i "s/ext.kotlin_version = '.*'/ext.kotlin_version = '1.9.24'/" android/build.gradle
-          
-          # 2. Update CompileSDK & TargetSDK ke 35 di android/app/build.gradle (App)
-          # Wajib untuk ffmpeg_kit_flutter_new
-          sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 35/' android/app/build.gradle
-          sed -i 's/targetSdkVersion flutter.targetSdkVersion/targetSdkVersion 35/' android/app/build.gradle
-          
-          # 3. Update MinSDK ke 24
-          sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 24/' android/app/build.gradle
-          sed -i 's/minSdkVersion 21/minSdkVersion 24/' android/app/build.gradle || true
 
-          # Cek hasil perubahan (untuk debug di log)
-          echo "--- Root build.gradle (Kotlin Version) ---"
-          grep "kotlin_version" android/build.gradle
-          echo "--- App build.gradle (SDK Versions) ---"
-          grep "SdkVersion" android/app/build.gradle
+          # --- A. UPDATE ROOT BUILD.GRADLE (Kotlin Version) ---
+          # 1. Coba ganti gaya lama (ext.kotlin_version)
+          sed -i "s/ext.kotlin_version = .*/ext.kotlin_version = '1.9.24'/" android/build.gradle
+          
+          # 2. Coba ganti gaya baru (plugins block)
+          # Ini yang kemungkinan besar dipakai Flutter 3.19+
+          sed -i 's/id "org.jetbrains.kotlin.android" version ".*"/id "org.jetbrains.kotlin.android" version "1.9.24"/' android/build.gradle
 
+          # --- B. UPDATE APP BUILD.GRADLE (SDK Versions) ---
+          # Kita gunakan regex yang lebih agresif untuk menangkap segala variasi penulisan
+          
+          # Update CompileSDK ke 35
+          sed -i 's/compileSdkVersion .*/compileSdkVersion 35/' android/app/build.gradle
+          
+          # Update TargetSDK ke 35
+          sed -i 's/targetSdkVersion .*/targetSdkVersion 35/' android/app/build.gradle
+          
+          # Update MinSDK ke 24 (Wajib untuk FFmpeg)
+          sed -i 's/minSdkVersion .*/minSdkVersion 24/' android/app/build.gradle
+
+          # --- C. DEBUG (Tanpa Crash) ---
+          echo "=== CONTENT: android/build.gradle ==="
+          cat android/build.gradle
+          
+          echo "=== CONTENT: android/app/build.gradle ==="
+          cat android/app/build.gradle
       # 5. Install dependencies & Build
+      
       - name: Install Dependencies
         run: flutter pub get
 
