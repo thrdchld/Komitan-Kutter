@@ -1,8 +1,10 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:ffmpeg_kit_flutter_full_gpl/ffmpeg_kit.dart';
-import 'package:ffmpeg_kit_flutter_full_gpl/return_code.dart';
+// --- [UPDATE IMPORTS] ---
+import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
+import 'package:ffmpeg_kit_flutter_new/return_code.dart';
+// ------------------------
 import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:intl/intl.dart';
@@ -40,36 +42,28 @@ class _HomePageState extends State<HomePage> {
   String? _selectedVideoName;
   final TextEditingController _timestampController = TextEditingController(text: "00:00:05 - 00:00:10");
   
-  // Status State
   String _statusLog = "Siap.";
   double _progress = 0.0;
   bool _isProcessing = false;
   String? _lastOutputPath;
 
-  // --- FUNGSI 1: MINTA IZIN & PILIH FILE ---
   Future<void> _pickVideo() async {
-    // Minta izin storage (Android 12 ke bawah butuh ini)
-    var status = await Permission.storage.status;
-    if (!status.isGranted) {
-      await Permission.storage.request();
-    }
-
-    FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.video,
-      allowMultiple: false,
-    );
-
-    if (result != null && result.files.single.path != null) {
-      setState(() {
-        _selectedVideoPath = result.files.single.path;
-        _selectedVideoName = result.files.single.name;
-        _statusLog = "Video terpilih: $_selectedVideoName";
-        _progress = 0.0;
-      });
+    if (await Permission.storage.request().isGranted || 
+        await Permission.manageExternalStorage.request().isGranted ||
+        await Permission.videos.request().isGranted) {
+          
+      FilePickerResult? result = await FilePicker.platform.pickFiles(type: FileType.video);
+      if (result != null && result.files.single.path != null) {
+        setState(() {
+          _selectedVideoPath = result.files.single.path;
+          _selectedVideoName = result.files.single.name;
+          _statusLog = "Video terpilih: $_selectedVideoName";
+          _progress = 0.0;
+        });
+      }
     }
   }
 
-  // --- FUNGSI 2: PARSING WAKTU (00:00:00 -> Detik) ---
   double? _parseTime(String timeStr) {
     try {
       timeStr = timeStr.trim().replaceAll(',', '.');
@@ -88,7 +82,6 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  // --- FUNGSI 3: PROSES UTAMA ---
   Future<void> _startProcessing() async {
     if (_selectedVideoPath == null) {
       setState(() => _statusLog = "❌ Error: Pilih video dulu!");
@@ -101,13 +94,11 @@ class _HomePageState extends State<HomePage> {
       _progress = 0.0;
     });
 
-    // 1. Parse Timestamp baris per baris
     List<String> lines = _timestampController.text.split('\n');
     List<Map<String, double>> jobs = [];
 
     for (String line in lines) {
       if (line.trim().isEmpty) continue;
-      // Pisahkan berdasarkan '-' atau spasi
       String cleanLine = line.replaceAll(' - ', ' ').replaceAll('-', ' ');
       List<String> parts = cleanLine.split(RegExp(r'\s+'));
       
@@ -128,16 +119,15 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
-    // 2. Siapkan Folder Output
-    // Kita simpan di folder External App Storage (Android/data/...) agar tidak perlu izin Write Storage yang ribet di Android 11+
     final directory = await getExternalStorageDirectory(); 
-    final String outDir = "${directory!.path}/KomitanKutter";
+    // Fallback ke folder internal jika external null (jarang terjadi)
+    final String basePath = directory?.path ?? (await getApplicationDocumentsDirectory()).path;
+    final String outDir = "$basePath/KomitanKutter";
     await Directory(outDir).create(recursive: true);
 
     int successCount = 0;
     int total = jobs.length;
 
-    // 3. Loop Processing
     for (int i = 0; i < total; i++) {
       double start = jobs[i]['start']!;
       double end = jobs[i]['end']!;
@@ -151,14 +141,13 @@ class _HomePageState extends State<HomePage> {
         _progress = (i) / total;
       });
 
-      // Command FFmpeg: Copy codec (-c copy) sangat cepat
       String cmd = "-y -ss $start -to $end -i \"$_selectedVideoPath\" -c copy \"$outFile\"";
 
+      // Eksekusi menggunakan package baru
       await FFmpegKit.execute(cmd).then((session) async {
         final returnCode = await session.getReturnCode();
         if (ReturnCode.isSuccess(returnCode)) {
           successCount++;
-          print("Sukses: $outFile");
         } else {
           String? logs = await session.getLogsAsString();
           print("Gagal segmen $i: $logs");
@@ -176,97 +165,33 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Komitan Kutter (Flutter)"),
-        backgroundColor: Colors.blue.shade100,
-      ),
+      appBar: AppBar(title: const Text("Komitan Kutter"), backgroundColor: Colors.blue.shade100),
       body: Padding(
         padding: const EdgeInsets.all(20.0),
         child: ListView(
           children: [
-            // --- AREA PILIH FILE ---
             Container(
               padding: const EdgeInsets.all(15),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.grey.shade300),
-              ),
+              decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.grey.shade300)),
               child: Column(
                 children: [
-                  ElevatedButton.icon(
-                    onPressed: _isProcessing ? null : _pickVideo,
-                    icon: const Icon(Icons.video_library),
-                    label: Text(_selectedVideoPath == null ? "Pilih Video" : "Ganti Video"),
-                  ),
+                  ElevatedButton.icon(onPressed: _isProcessing ? null : _pickVideo, icon: const Icon(Icons.video_library), label: Text(_selectedVideoPath == null ? "Pilih Video" : "Ganti Video")),
                   const SizedBox(height: 10),
-                  Text(
-                    _selectedVideoName ?? "Belum ada video dipilih",
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                    textAlign: TextAlign.center,
-                  ),
+                  Text(_selectedVideoName ?? "Belum ada video dipilih", style: const TextStyle(fontWeight: FontWeight.bold), textAlign: TextAlign.center),
                 ],
               ),
             ),
-            
             const SizedBox(height: 20),
-            
-            // --- AREA TIMESTAMP ---
             const Text("Masukkan Timestamp (Start - End):"),
             const SizedBox(height: 5),
-            TextField(
-              controller: _timestampController,
-              maxLines: 5,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                hintText: "00:00:05 - 00:00:10\n00:01:20 - 00:01:30",
-                filled: true,
-                fillColor: Colors.white,
-              ),
-            ),
-
+            TextField(controller: _timestampController, maxLines: 5, decoration: const InputDecoration(border: OutlineInputBorder(), hintText: "00:00:05 - 00:00:10", filled: true, fillColor: Colors.white)),
             const SizedBox(height: 20),
-
-            // --- TOMBOL PROSES ---
-            SizedBox(
-              height: 50,
-              child: ElevatedButton(
-                onPressed: (_isProcessing || _selectedVideoPath == null) ? null : _startProcessing,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
-                  foregroundColor: Colors.white,
-                ),
-                child: _isProcessing 
-                  ? const CircularProgressIndicator(color: Colors.white)
-                  : const Text("MULAI POTONG VIDEO", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-              ),
-            ),
-
+            SizedBox(height: 50, child: ElevatedButton(onPressed: (_isProcessing || _selectedVideoPath == null) ? null : _startProcessing, style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, foregroundColor: Colors.white), child: _isProcessing ? const CircularProgressIndicator(color: Colors.white) : const Text("MULAI POTONG", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)))),
             const SizedBox(height: 20),
-
-            // --- PROGRESS & LOG ---
             LinearProgressIndicator(value: _progress),
             const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.all(10),
-              color: Colors.black87,
-              width: double.infinity,
-              child: SelectableText(
-                _statusLog,
-                style: const TextStyle(color: Colors.greenAccent, fontFamily: 'monospace'),
-              ),
-            ),
-
-            // --- TOMBOL BUKA HASIL ---
-            if (!_isProcessing && _lastOutputPath != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 10),
-                child: OutlinedButton.icon(
-                  onPressed: () => OpenFile.open(_lastOutputPath),
-                  icon: const Icon(Icons.play_arrow),
-                  label: const Text("Putar Hasil Terakhir"),
-                ),
-              )
+            Container(padding: const EdgeInsets.all(10), color: Colors.black87, width: double.infinity, child: SelectableText(_statusLog, style: const TextStyle(color: Colors.greenAccent, fontFamily: 'monospace'))),
+            if (!_isProcessing && _lastOutputPath != null) Padding(padding: const EdgeInsets.only(top: 10), child: OutlinedButton.icon(onPressed: () => OpenFile.open(_lastOutputPath), icon: const Icon(Icons.play_arrow), label: const Text("Putar Hasil")))
           ],
         ),
       ),
