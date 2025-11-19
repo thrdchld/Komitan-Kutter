@@ -55,10 +55,10 @@ jobs:
           # Root Gradle
           cat > android/build.gradle <<GRADLE
           buildscript {
-              ext.kotlin_version = '1.9.20'
+              ext.kotlin_version = '1.9.24'
               repositories { google(); mavenCentral() }
               dependencies {
-                  classpath 'com.android.tools.build:gradle:8.2.0'
+                  classpath 'com.android.tools.build:gradle:8.7.0'
                   classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:\$kotlin_version"
               }
           }
@@ -105,9 +105,10 @@ jobs:
               implementation "androidx.multidex:multidex:2.0.1"
           }
           EOF
-          # Wrapper 8.5
+          # Wrapper 8.13
           mkdir -p android/gradle/wrapper
-          echo "distributionUrl=https\://services.gradle.org/distributions/gradle-8.5-all.zip" > android/gradle/wrapper/gradle-wrapper.properties
+          echo "distributionUrl=https\://services.gradle.org/distributions/gradle-8.13-bin.zip" > android/gradle/wrapper/gradle-wrapper.properties
+          wget -q https://github.com/gradle/gradle/raw/v8.13.0/gradle/wrapper/gradle-wrapper.jar -O android/gradle/wrapper/gradle-wrapper.jar
 
       # 4. Inject Permissions
       - name: Inject Permissions
