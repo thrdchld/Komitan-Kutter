@@ -1,9 +1,7 @@
-name: Build Flutter APK (Stable)
+name: Build Flutter APK (Auto-Fix)
 
 on:
-  push:
-    branches: [ flutter-version ]
-  workflow_dispatch:
+  workflow_dispatch: # Hanya jalan manual (Save kuota, save mental)
 
 jobs:
   build:
@@ -12,33 +10,88 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 1. Java 11 (Pasangan sejati Gradle 7 & Android SDK 33)
+      # 1. Setup Java 11 (Versi Emas untuk kompatibilitas tinggi)
       - name: Setup Java 11
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '11'
 
-      # 2. Flutter Stable
+      # 2. Setup Flutter 3.10 (Versi Stabil, tidak rewel)
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.10.0' # Versi Flutter yang sangat stabil dengan Java 11
+          flutter-version: '3.10.0'
           channel: 'stable'
           cache: true
 
-      # 3. Dependencies
+      # ============================================================
+      # 3. [LANGKAH PENYEMBUHAN] HAPUS & BUAT ULANG FOLDER ANDROID
+      # Ini menjamin kita pakai V2 Embedding, apapun isi repo Anda.
+      # ============================================================
+      - name: Force Re-generate Android Folder
+        run: |
+          echo "🔥 Burning old android folder..."
+          rm -rf android
+          
+          echo "✨ Generating fresh Android V2 project..."
+          flutter create . --project-name=komitan_kutter --org=com.komitan --platforms=android
+
+      # 4. [LANGKAH PENYEMBUHAN] SUNTIK IZIN & CONFIG
+      # Karena folder baru masih polos, kita suntik izin manual
+      - name: Inject Config & Permissions
+        run: |
+          echo "💉 Injecting permissions..."
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          cat > $MANIFEST <<EOF
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+              package="com.komitan.komitan_kutter">
+              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+              <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
+              <uses-permission android:name="android.permission.INTERNET"/>
+              <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>
+              <application
+                  android:label="Komitan Kutter"
+                  android:name="\${applicationName}"
+                  android:icon="@mipmap/ic_launcher">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:launchMode="singleTop"
+                      android:theme="@style/LaunchTheme"
+                      android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+                      android:hardwareAccelerated="true"
+                      android:windowSoftInputMode="adjustResize">
+                      <meta-data
+                        android:name="io.flutter.embedding.android.NormalTheme"
+                        android:resource="@style/NormalTheme"
+                        />
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
+                      </intent-filter>
+                  </activity>
+                  <meta-data
+                      android:name="flutterEmbedding"
+                      android:value="2" />
+              </application>
+          </manifest>
+          EOF
+          
+          echo "🔧 Forcing minSdk 24 for FFmpeg..."
+          sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 24/' android/app/build.gradle
+
+      # 5. Install Dependencies (Baru jalan setelah folder android diperbaiki)
       - name: Install Dependencies
         run: flutter pub get
 
-      # 4. Build (Tanpa utak-atik Gradle manual!)
-      # Flutter 3.10 akan otomatis menggunakan konfigurasi yang cocok
+      # 6. Build APK
       - name: Build APK
-        run: flutter build apk --release --split-per-abi
+        run: flutter build apk --release --split-per-abi --verbose
 
-      # 5. Upload
+      # 7. Upload
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: KomitanKutter-Stable
+          name: KomitanKutter-Golden-APK
           path: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
