@@ -1,9 +1,11 @@
-name: Build Flutter APK (Final Fix)
+name: Build Flutter APK (CI build)
 
 on:
   push:
     paths:
       - '.github/workflows/flutter-build.yml'
+      - '**.dart'
+      - 'lib/**'
   workflow_dispatch:
 
 jobs:
@@ -27,152 +29,60 @@ jobs:
         with:
           flutter-version: '3.19.0'
 
-      - name: Show environment (debug)
+      - name: Debug info
         run: |
           echo "WORKSPACE: $GITHUB_WORKSPACE"
-          echo "MY_SDK: $MY_SDK"
-          java -version || true
           flutter --version || true
 
-      # 1. Install SDK 35 di Folder Kustom (robust handling & avoid broken-pipe)
       - name: Setup Custom SDK 35
         run: |
           set -euo pipefail
           mkdir -p "$MY_SDK/cmdline-tools"
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmd.zip
           unzip -q cmd.zip -d "$MY_SDK/cmdline-tools"
-
-          # normalize folder layout (some zips include inner cmdline-tools directory)
           if [ -d "$MY_SDK/cmdline-tools/cmdline-tools" ]; then
             mv "$MY_SDK/cmdline-tools/cmdline-tools" "$MY_SDK/cmdline-tools/latest" || true
           else
             mkdir -p "$MY_SDK/cmdline-tools/latest"
             mv "$MY_SDK/cmdline-tools"/* "$MY_SDK/cmdline-tools/latest" 2>/dev/null || true
           fi
-
           SDKMANAGER="$MY_SDK/cmdline-tools/latest/bin/sdkmanager"
-
-          if [ ! -x "$SDKMANAGER" ]; then
-            echo "⚠️ sdkmanager not found at $SDKMANAGER - listing directory for debug:"
-            ls -la "$MY_SDK/cmdline-tools" || true
-            exit 1
-          fi
-
           export PATH="$MY_SDK/cmdline-tools/latest/bin:$PATH"
-
-          # Accept licenses: guard against 'yes' broken pipe causing set -e to fail
           { yes | "$SDKMANAGER" --licenses --sdk_root="$MY_SDK" >/dev/null 2>&1 || true; }
-
-          # Install required platform & build-tools (ignore any early SIGPIPE from yes)
           { yes | "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0" "platform-tools" --sdk_root="$MY_SDK" >/dev/null 2>&1 || true; }
 
-          echo "✅ SDK setup done. Listing installed platforms:"
-          "$SDKMANAGER" --list_installed || true
-
-      # 2. Create/Regenerate Android project & pin sdk.dir
-      - name: Create Project (regenerate android)
+      - name: Create/regen android project (force valid package)
         run: |
           set -euo pipefail
-          # remove android to ensure consistent generated project
+          # Force valid project name so Dart package name is valid
+          PROJECT_NAME="komitan_kutter"
+          ORG="com.komitan"
           rm -rf android
-          flutter create . --platforms=android
+          flutter create . --project-name "$PROJECT_NAME" --org "$ORG" --platforms=android
           echo "sdk.dir=$MY_SDK" > android/local.properties
-          echo "Wrote android/local.properties ->"
-          cat android/local.properties || true
 
-      # 3. Config Gradle (Kotlin & SDK Version) - write files using here-docs (no expansion)
-      - name: Config Gradle
-        run: |
-          set -euo pipefail
-          mkdir -p android
-
-          cat > android/build.gradle <<'GRADLE'
-          buildscript {
-              ext.kotlin_version = '1.9.20'
-              repositories { google(); mavenCentral() }
-              dependencies {
-                  classpath 'com.android.tools.build:gradle:8.2.0'
-                  classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:${kotlin_version}"
-              }
-          }
-          allprojects { repositories { google(); mavenCentral(); maven { url 'https://jitpack.io' } } }
-          rootProject.buildDir = '../build'
-          subprojects { project.buildDir = "${rootProject.buildDir}/${project.name}" }
-          subprojects { project.evaluationDependsOn(':app') }
-          task clean(type: Delete) { delete rootProject.buildDir }
-          GRADLE
-
-          cat > android/app/build.gradle <<'APP'
-          def localProperties = new Properties()
-          def localPropertiesFile = rootProject.file('local.properties')
-          if (localPropertiesFile.exists()) {
-              localPropertiesFile.withReader('UTF-8') { reader -> localProperties.load(reader) }
-          }
-          def flutterRoot = localProperties.getProperty('flutter.sdk')
-          if (flutterRoot == null) throw new GradleException("Flutter SDK not found.")
-
-          apply plugin: 'com.android.application'
-          apply plugin: 'kotlin-android'
-          apply from: "${flutterRoot}/packages/flutter_tools/gradle/flutter.gradle"
-
-          android {
-              namespace "com.komitan.komitan_kutter"
-              compileSdkVersion 35
-              buildToolsVersion "35.0.0"
-
-              defaultConfig {
-                  applicationId "com.komitan.komitan_kutter"
-                  minSdkVersion 24
-                  targetSdkVersion 35
-                  versionCode 1
-                  versionName "1.0"
-                  multiDexEnabled true
-              }
-              compileOptions { sourceCompatibility JavaVersion.VERSION_1_8; targetCompatibility JavaVersion.VERSION_1_8 }
-              kotlinOptions { jvmTarget = '1.8' }
-          }
-          flutter { source '../..' }
-          dependencies {
-              implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:${kotlin_version}"
-              implementation "androidx.multidex:multidex:2.0.1"
-          }
-          APP
-
-          mkdir -p android/gradle/wrapper
-          echo "distributionUrl=https\://services.gradle.org/distributions/gradle-8.5-all.zip" > android/gradle/wrapper/gradle-wrapper.properties
-
-      # 4. Inject Permissions (only if manifest exists)
-      - name: Inject Permissions
+      - name: Inject Permissions (if manifest exists)
         run: |
           set -euo pipefail
           MANIFEST=android/app/src/main/AndroidManifest.xml
           if [ -f "$MANIFEST" ]; then
             cp "$MANIFEST" "$MANIFEST.bak"
-            perl -0777 -pe 's|</manifest>|    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>\n    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>\n</manifest>|s' -i "$MANIFEST"
+            perl -0777 -pe 's|</manifest>|    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>\n    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>\n</manifest>|s' -i "$MANIFEST" || true
             echo "Permissions injected (backup saved as $MANIFEST.bak)."
           else
-            echo "⚠️ AndroidManifest.xml tidak ditemukan, melewati injeksi permission."
+            echo "Manifest tidak ditemukan; melewati injeksi permission."
           fi
 
-      # 4.5 (optional) Run flutter doctor -v to catch common environment issues early
-      - name: Flutter Doctor
-        run: |
-          set -euo pipefail
-          flutter doctor -v || true
+      - name: Flutter doctor
+        run: flutter doctor -v || true
 
-      # 5. Build APK
       - name: Build APK
         run: |
-          set -euo pipefail
-          flutter pub get
-          # optionally run a clean first if you want deterministic builds
-          flutter clean || true
           flutter pub get
           flutter build apk --release --split-per-abi --verbose
 
-      # 6. Upload artifact
-      - name: Upload APK artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: KomitanKutter-Final-APK
-          path: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          name: KomitanKutter-APK
+          path: build/app/outputs/flutter-apk/*.apk
