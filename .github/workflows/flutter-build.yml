@@ -9,55 +9,72 @@ jobs:
   build:
     runs-on: ubuntu-22.04
 
+    # 1. [FIX] Set Environment Global agar SEMUA step memakai path yang sama
+    env:
+      JAVA_VERSION: '17'
+      FLUTTER_VERSION: '3.19.0'
+      ANDROID_ARCH: 'x86_64'
+      ANDROID_TARGET_SDK: '35'
+      ANDROID_BUILD_TOOLS: '35.0.0'
+      ANDROID_SDK_ROOT: '/usr/local/lib/android/sdk'
+
     steps:
       - uses: actions/checkout@v4
 
-      # 1. Setup Java 17
+      # 2. Setup Java 17
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: ${{ env.JAVA_VERSION }}
 
-      # 2. Setup Flutter
+      # 3. Setup Flutter
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.19.0'
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: 'stable'
           cache: true
 
-      # 3. [FIX PAMUNGKAS] Install SDK 35 & Hapus Build Tools Lama
-      # Kita menghapus versi 30.0.3 agar Gradle TIDAK BISA menggunakannya
-      - name: Setup Android SDK & Prune Old Tools
+      # 4. [FIX PAMUNGKAS] Setup SDK yang Benar & Persistent
+      - name: Setup Android SDK Correctly
         run: |
-          echo "Configuring Android SDK..."
-          export ANDROID_HOME=/usr/local/lib/android/sdk
-          SDKMANAGER=$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager
+          # Pastikan variable masuk ke Environment GitHub Action (Persistent)
+          echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
           
-          # Terima Lisensi
+          # Tambahkan ke PATH agar perintah 'sdkmanager' dikenal di step berikutnya
+          echo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "$ANDROID_SDK_ROOT/platform-tools" >> $GITHUB_PATH
+          
+          # Definisikan lokasi sdkmanager saat ini
+          SDKMANAGER=$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager
+          
+          echo "--- Cleaning Old Build Tools (Zombies) ---"
+          # Hapus paksa versi lama yang sering bikin masalah
+          sudo rm -rf $ANDROID_SDK_ROOT/build-tools/30.*
+          sudo rm -rf $ANDROID_SDK_ROOT/build-tools/31.*
+          sudo rm -rf $ANDROID_SDK_ROOT/build-tools/32.*
+          sudo rm -rf $ANDROID_SDK_ROOT/build-tools/33.*
+          sudo rm -rf $ANDROID_SDK_ROOT/build-tools/34.*
+
+          echo "--- Installing Target SDK & Tools ---"
+          # Terima semua lisensi dulu
           yes | $SDKMANAGER --licenses > /dev/null
           
-          # Install SDK 35 dan Build Tools 35
-          echo "Installing Android 35..."
-          yes | $SDKMANAGER "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+          # Install paket wajib
+          yes | $SDKMANAGER "platforms;android-${{ env.ANDROID_TARGET_SDK }}" "build-tools;${{ env.ANDROID_BUILD_TOOLS }}" "platform-tools"
           
-          # [HAPUS VERSI LAMA] Ini kuncinya!
-          echo "Removing old Build Tools 30.0.3 to force upgrade..."
-          sudo rm -rf $ANDROID_HOME/build-tools/30.0.3
-          sudo rm -rf $ANDROID_HOME/build-tools/31.*
-          sudo rm -rf $ANDROID_HOME/build-tools/32.*
-          
-          # Verifikasi: Pastikan hanya ada yang baru
-          ls -lh $ANDROID_HOME/build-tools/
+          echo "--- Verification ---"
+          ls -lh $ANDROID_SDK_ROOT/build-tools/
 
-      # 4. Reset Project
+      # 5. Reset Folder Android (Fresh Start)
       - name: Re-create Android Platform
         run: |
           rm -rf android
           flutter create . --project-name=komitan_kutter --org=com.komitan
 
-      # 5. Overwrite Root build.gradle (AGP 8.1.1 + Kotlin 1.9.20)
+      # 6. Overwrite Root build.gradle (AGP 8.1.1)
       - name: Overwrite Root build.gradle
         run: |
           cat > android/build.gradle <<EOF
@@ -90,7 +107,7 @@ jobs:
           }
           EOF
 
-      # 6. Overwrite App build.gradle (Force SDK 35 & BuildTools 35)
+      # 7. Overwrite App build.gradle (Force SDK 35)
       - name: Overwrite App build.gradle
         run: |
           cat > android/app/build.gradle <<EOF
@@ -119,9 +136,8 @@ jobs:
 
           android {
               namespace "com.komitan.komitan_kutter"
-              compileSdkVersion 35
-              // Kita paksa lagi di sini untuk kepastian
-              buildToolsVersion "35.0.0"
+              compileSdkVersion ${{ env.ANDROID_TARGET_SDK }}
+              buildToolsVersion "${{ env.ANDROID_BUILD_TOOLS }}"
 
               compileOptions {
                   sourceCompatibility JavaVersion.VERSION_17
@@ -139,7 +155,7 @@ jobs:
               defaultConfig {
                   applicationId "com.komitan.komitan_kutter"
                   minSdkVersion 24
-                  targetSdkVersion 35
+                  targetSdkVersion ${{ env.ANDROID_TARGET_SDK }}
                   versionCode flutterVersionCode.toInteger()
                   versionName flutterVersionName
                   multiDexEnabled true
@@ -162,7 +178,7 @@ jobs:
           }
           EOF
 
-      # 7. Inject Permissions
+      # 8. Inject Permissions
       - name: Inject Android Permissions
         run: |
           cat > android/app/src/main/AndroidManifest.xml <<EOF
@@ -199,15 +215,16 @@ jobs:
           </manifest>
           EOF
 
-      # 8. Install & Build
+      # 9. Build & Verbose Logging
       - name: Build APK
         run: |
           flutter pub get
-          flutter build apk --release --split-per-abi
+          # Menggunakan --verbose untuk melihat jika masih ada yang salah
+          flutter build apk --release --split-per-abi --verbose
 
-      # 9. Upload
+      # 10. Upload
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: KomitanKutter-APK
+          name: KomitanKutter-Final-APK
           path: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
