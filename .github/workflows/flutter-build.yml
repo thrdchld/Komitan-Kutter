@@ -1,4 +1,4 @@
-name: Build Flutter APK (Java 11 Fix)
+name: Build Flutter APK (Min Version)
 
 on:
   workflow_dispatch:
@@ -7,40 +7,155 @@ jobs:
   build:
     runs-on: ubuntu-22.04
 
+    env:
+      JAVA_VERSION: '17'
+      FLUTTER_VERSION: '3.19.0'
+      MY_ANDROID_SDK: ${{ github.workspace }}/my-android-sdk
+
     steps:
       - uses: actions/checkout@v4
 
-      # 1. [FIX] Gunakan Java 11 (Paling stabil untuk Flutter 3.10 & Gradle 7)
-      - name: Setup Java 11
+      - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '11'
+          java-version: ${{ env.JAVA_VERSION }}
 
-      # 2. Setup Flutter 3.10.0
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.10.0'
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: 'stable'
           cache: true
 
-      # 3. Reset Folder Android
-      - name: Clean Android Folder
-        run: rm -rf android
-
-      # 4. Buat Ulang Struktur Android
-      - name: Create Standard Android Project
-        run: flutter create . --project-name=komitan_kutter --org=com.komitan --platforms=android
-
-      # 5. Inject Izin & MinSDK 24
-      - name: Inject Config & Permissions
+      # 1. SETUP PRIVATE SDK (Agar tidak korup)
+      - name: Setup Clean Private Android SDK
         run: |
-          # Inject Manifest
-          MANIFEST="android/app/src/main/AndroidManifest.xml"
-          cat > $MANIFEST <<EOF
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-              package="com.komitan.komitan_kutter">
+          mkdir -p $MY_ANDROID_SDK/cmdline-tools
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline.zip
+          unzip -q cmdline.zip -d $MY_ANDROID_SDK/cmdline-tools
+          mv $MY_ANDROID_SDK/cmdline-tools/cmdline-tools $MY_ANDROID_SDK/cmdline-tools/latest
+          
+          echo "ANDROID_HOME=$MY_ANDROID_SDK" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$MY_ANDROID_SDK" >> $GITHUB_ENV
+          echo "$MY_ANDROID_SDK/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "$MY_ANDROID_SDK/platform-tools" >> $GITHUB_PATH
+
+      # 2. INSTALL SDK 35 (Wajib untuk paket ini)
+      - name: Install SDK 35 Components
+        run: |
+          SDKBIN="$MY_ANDROID_SDK/cmdline-tools/latest/bin/sdkmanager"
+          yes | $SDKBIN --licenses --sdk_root=$MY_ANDROID_SDK > /dev/null
+          yes | $SDKBIN --sdk_root=$MY_ANDROID_SDK "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+      # 3. RESET ANDROID FOLDER
+      - name: Re-create Android Platform
+        run: |
+          rm -rf android
+          flutter create . --project-name=komitan_kutter --org=com.komitan
+
+      # 4. OVERWRITE ROOT GRADLE (AGP 8.2.0 + Kotlin 1.9.20)
+      # Ini kombinasi sempurna untuk SDK 35
+      - name: Overwrite Root build.gradle
+        run: |
+          cat > android/build.gradle <<EOF
+          buildscript {
+              ext.kotlin_version = '1.9.20'
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+              dependencies {
+                  classpath 'com.android.tools.build:gradle:8.2.0'
+                  classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:\$kotlin_version"
+              }
+          }
+          allprojects {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.buildDir = '../build'
+          subprojects {
+              project.buildDir = "\${rootProject.buildDir}/\${project.name}"
+          }
+          subprojects {
+              project.evaluationDependsOn(':app')
+          }
+          task clean(type: Delete) {
+              delete rootProject.buildDir
+          }
+          EOF
+
+      # 5. OVERWRITE APP GRADLE (MinSDK 24)
+      - name: Overwrite App build.gradle
+        run: |
+          cat > android/app/build.gradle <<EOF
+          def localProperties = new Properties()
+          def localPropertiesFile = rootProject.file('local.properties')
+          if (localPropertiesFile.exists()) {
+              localPropertiesFile.withReader('UTF-8') { reader ->
+                  localProperties.load(reader)
+              }
+          }
+          def flutterRoot = localProperties.getProperty('flutter.sdk')
+          if (flutterRoot == null) throw new GradleException("Flutter SDK not found.")
+
+          def flutterVersionCode = localProperties.getProperty('flutter.versionCode')
+          if (flutterVersionCode == null) flutterVersionCode = '1'
+
+          def flutterVersionName = localProperties.getProperty('flutter.versionName')
+          if (flutterVersionName == null) flutterVersionName = '1.0'
+
+          apply plugin: 'com.android.application'
+          apply plugin: 'kotlin-android'
+          apply from: "\$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
+
+          android {
+              namespace "com.komitan.komitan_kutter"
+              compileSdkVersion 35
+              // WAJIB 35.0.0 agar sinkron dengan Private SDK kita
+              buildToolsVersion "35.0.0" 
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_1_8
+                  targetCompatibility JavaVersion.VERSION_1_8
+              }
+              kotlinOptions {
+                  jvmTarget = '1.8'
+              }
+              sourceSets {
+                  main.java.srcDirs += 'src/main/kotlin'
+              }
+              defaultConfig {
+                  applicationId "com.komitan.komitan_kutter"
+                  minSdkVersion 24 // Wajib untuk FFmpeg
+                  targetSdkVersion 35
+                  versionCode flutterVersionCode.toInteger()
+                  versionName flutterVersionName
+                  multiDexEnabled true
+              }
+              buildTypes {
+                  release {
+                      signingConfig signingConfigs.debug
+                  }
+              }
+          }
+          flutter {
+              source '../..'
+          }
+          dependencies {
+              implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:\$kotlin_version"
+              implementation "androidx.multidex:multidex:2.0.1"
+          }
+          EOF
+
+      # 6. INJECT IZIN
+      - name: Inject Permissions
+        run: |
+          cat > android/app/src/main/AndroidManifest.xml <<EOF
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.komitan.komitan_kutter">
               <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
               <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
               <uses-permission android:name="android.permission.INTERNET"/>
@@ -72,30 +187,16 @@ jobs:
               </application>
           </manifest>
           EOF
-          
-          # Inject MinSDK 24 (Wajib untuk FFmpeg)
-          sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 24/' android/app/build.gradle
-          # Backup jika format beda
-          sed -i 's/minSdkVersion [0-9]*/minSdkVersion 24/' android/app/build.gradle
 
-      # 6. Install Dependencies
-      # Pastikan kita pakai paket FFmpeg yang STABIL (4.5.1 atau 5.1.0)
-      # Jangan pakai versi 'new' (4.1.0) yang minta SDK 35
-      - name: Force Stable FFmpeg Dependency
-        run: |
-          flutter pub remove ffmpeg_kit_flutter_new || true
-          flutter pub remove ffmpeg_kit_flutter_full_gpl || true
-          # Gunakan versi 5.1.0 yang ada di MavenCentral
-          flutter pub add ffmpeg_kit_flutter_full_gpl:^5.1.0
-          flutter pub get
-
-      # 7. Build APK
+      # 7. BUILD
       - name: Build APK
-        run: flutter build apk --release --split-per-abi --verbose
+        run: |
+          flutter pub get
+          flutter build apk --release --split-per-abi --verbose
 
-      # 8. Upload APK
+      # 8. UPLOAD
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: KomitanKutter-Java11-APK
+          name: KomitanKutter-Min310
           path: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk

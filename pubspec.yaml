@@ -10,11 +10,9 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # [PAKET BARU]
-  # Sesuai permintaan: Versi 4.1.0 (FFmpeg v8.0)
-  ffmpeg_kit_flutter_new: ^4.1.0
+  # [BARU] Versi Minimal, Stabil, dan Ada!
+  ffmpeg_kit_flutter_new_min: ^3.1.0
 
-  # Dependencies pendukung
   file_picker: ^6.1.1
   permission_handler: ^11.0.1
   path_provider: ^2.1.1
