@@ -1,10 +1,34 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
-echo "🔥 MEMULAI PERBAIKAN VERSI DART & CLEAN INSTALL..."
+echo "🔥 MEMULAI PERBAIKAN VERSI DART & CLEAN INSTALL (AMAN)..."
 
-# 1. Hapus Semua Konfigurasi Salah
-rm -rf android ios web macos windows linux test .github
+# 0. Safety: pastikan berada di repo git
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  echo "⚠️ Tidak terlihat sebagai repo git. Proses dibatalkan untuk mencegah kehilangan data."
+  exit 1
+fi
+
+# 0b. Commit changes / buat backup branch otomatis (so you can roll back)
+BACKUP_BRANCH="pre-cleanup-$(date +%Y%m%d%H%M%S)"
+git add -A || true
+git commit -m "chore: autosave before cleanup ($BACKUP_BRANCH)" || true
+git branch "$BACKUP_BRANCH" || true
+echo "🔒 Backup dibuat: branch $BACKUP_BRANCH"
+
+# 1. Hapus file/dirs yang memang ingin di-reset (hati-hati)
+#    - Gunakan 'git clean' untuk hapus file untracked yang ingin dihapus, agar tak menghapus tracked files tanpa komit.
+echo "🧹 Membersihkan file untracked dan build artifacts (dry-run)..."
+git clean -ndx
+
+echo "🧹 Menjalankan pembersihan final (hapus file untracked dan build output)..."
+# HATI-HATI: ini hanya menghapus untracked/ignored files, bukan tracked files.
+git clean -fdx
+
+# Jika memang ingin menghapus tracked platform folders (android/ios/...), lakukan setelah backup:
+echo "🔁 Menghapus direktori platform lama (android ios web macos windows linux) — ini menghapus tracked files!"
+rm -rf android ios web macos windows linux test
+# jika ingin menyimpan lib lain, hapus hanya file yang diperlukan:
 rm -f pubspec.yaml pubspec.lock lib/main.dart
 mkdir -p lib .github/workflows
 
@@ -19,15 +43,14 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  # [FIX] Dart 3.0.0 (Flutter 3.10+) sampai sebelum 4.0.0
-  # Kemarin salah tulis 3.10.0 (Itu versi Flutter, bukan Dart)
+  # Dart 3.x (>=3.0.0 <4.0.0)
   sdk: '>=3.0.0 <4.0.0'
 
 dependencies:
   flutter:
     sdk: flutter
   
-  # Paket FFmpeg Pilihan Anda
+  # Paket FFmpeg (minimal build)
   ffmpeg_kit_flutter_new_min: ^3.1.0
   
   file_picker: ^6.1.1
@@ -81,14 +104,15 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> cut() async {
-    // Request multiple permissions for Android 13+ compliance
+    // Request permissions: untuk Android 13+ gunakan READ_MEDIA_* (handled by permission_handler)
     if (Platform.isAndroid) {
-      Map<Permission, PermissionStatus> statuses = await [
-        Permission.storage,
+      final perms = <Permission>[
+        Permission.storage, // fallback for older devices
         Permission.manageExternalStorage,
         Permission.videos,
         Permission.audio,
-      ].request();
+      ];
+      await perms.request();
     }
 
     var res = await FilePicker.platform.pickFiles(type: FileType.video);
@@ -121,7 +145,7 @@ DARTCODE
 # 4. BUAT GITHUB ACTION YAML (Private SDK Fix)
 # ---------------------------------------------------------
 echo "📝 Menulis .github/workflows/flutter-build.yml..."
-cat > .github/workflows/flutter-build.yml <<EOF
+cat > .github/workflows/flutter-build.yml <<'EOF'
 name: Build Flutter APK (Final Fix)
 
 on:
@@ -152,11 +176,10 @@ jobs:
           mkdir -p \$MY_SDK/cmdline-tools
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmd.zip
           unzip -q cmd.zip -d \$MY_SDK/cmdline-tools
-          mv \$MY_SDK/cmdline-tools/cmdline-tools \$MY_SDK/cmdline-tools/latest
+          mv \$MY_SDK/cmdline-tools/cmdline-tools \$MY_SDK/cmdline-tools/latest || true
           
           export PATH=\$MY_SDK/cmdline-tools/latest/bin:\$PATH
           yes | sdkmanager --licenses --sdk_root=\$MY_SDK > /dev/null
-          # Install SDK 35 dan Build Tools 35.0.0 (Bukan 34)
           yes | sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools" --sdk_root=\$MY_SDK
 
       # 2. Generate Project
@@ -164,30 +187,27 @@ jobs:
         run: |
           rm -rf android
           flutter create . --platforms=android
-          # PAKSA SDK PATH DI LOCAL.PROPERTIES
           echo "sdk.dir=\$MY_SDK" > android/local.properties
 
       # 3. Config Gradle (Kotlin & SDK Version)
       - name: Config Gradle
         run: |
-          # Root Gradle: Kotlin 1.9.20 & AGP 8.2.0
           cat > android/build.gradle <<GRADLE
           buildscript {
               ext.kotlin_version = '1.9.20'
               repositories { google(); mavenCentral() }
               dependencies {
                   classpath 'com.android.tools.build:gradle:8.2.0'
-                  classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:\\\$kotlin_version"
+                  classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:\$kotlin_version"
               }
           }
           allprojects { repositories { google(); mavenCentral(); maven { url 'https://jitpack.io' } } }
           rootProject.buildDir = '../build'
-          subprojects { project.buildDir = "\\\${rootProject.buildDir}/\\\${project.name}" }
+          subprojects { project.buildDir = "\${rootProject.buildDir}/\${project.name}" }
           subprojects { project.evaluationDependsOn(':app') }
           task clean(type: Delete) { delete rootProject.buildDir }
 GRADLE
 
-          # App Gradle: Force SDK 35 & BuildTools 35.0.0
           cat > android/app/build.gradle <<APP
           def localProperties = new Properties()
           def localPropertiesFile = rootProject.file('local.properties')
@@ -199,7 +219,7 @@ GRADLE
 
           apply plugin: 'com.android.application'
           apply plugin: 'kotlin-android'
-          apply from: "\\\$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
+          apply from: "\$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
 
           android {
               namespace "com.komitan.komitan_kutter"
@@ -219,20 +239,24 @@ GRADLE
           }
           flutter { source '../..' }
           dependencies {
-              implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:\\\$kotlin_version"
+              implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:\$kotlin_version"
               implementation "androidx.multidex:multidex:2.0.1"
           }
 APP
-          # Wrapper 8.5 (Wajib untuk AGP 8.2)
           mkdir -p android/gradle/wrapper
           echo "distributionUrl=https\://services.gradle.org/distributions/gradle-8.5-all.zip" > android/gradle/wrapper/gradle-wrapper.properties
 
-      # 4. Inject Permissions
+      # 4. Inject Permissions (only if manifest exists)
       - name: Inject Permissions
         run: |
-          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>' android/app/src/main/AndroidManifest.xml
-          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>' android/app/src/main/AndroidManifest.xml
-          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>' android/app/src/main/AndroidManifest.xml
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          if [ -f "\$MANIFEST" ]; then
+            cp "\$MANIFEST" "\$MANIFEST.bak"
+            perl -0777 -pe 's|</manifest>|    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>\n    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>\n</manifest>|s' -i "\$MANIFEST"
+            echo "Permissions injected (backup saved as \$MANIFEST.bak). NOTE: consider using READ_MEDIA_* for Android 13+ or Android photo picker for one-time access."
+          else
+            echo "⚠️ AndroidManifest.xml tidak ditemukan, melewati injeksi permission."
+          fi
 
       # 5. Build
       - name: Build APK
@@ -248,10 +272,10 @@ APP
 EOF
 
 echo "===================================================="
-echo "✅ SELESAI! VERSI DART SUDAH DIPERBAIKI."
+echo "✅ SELESAI! VERSI DART SUDAH DIPERBAIKI (AMAN)."
 echo "===================================================="
-echo "👉 Lakukan perintah ini sekarang:"
-echo "   git add ."
-echo "   git commit -m 'fix: Correct Dart version & Build Tools sync'"
-echo "   git push"
+echo "👉 Rekomendasi langkah selanjutnya:"
+echo "   1) Cek perubahan: git diff"
+echo "   2) Jika puas: git add . && git commit -m 'fix: Correct Dart version & Build Tools sync'"
+echo "   3) Push: git push"
 echo "===================================================="
