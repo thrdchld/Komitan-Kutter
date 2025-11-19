@@ -71,6 +71,12 @@ jobs:
 
           # App Gradle
           cat > android/app/build.gradle <<EOF
+          plugins {
+              id 'com.android.application'
+              id 'kotlin-android'
+              id 'flutter'
+          }
+
           def localProperties = new Properties()
           def localPropertiesFile = rootProject.file('local.properties')
           if (localPropertiesFile.exists()) {
@@ -79,15 +85,11 @@ jobs:
           def flutterRoot = localProperties.getProperty('flutter.sdk')
           if (flutterRoot == null) throw new GradleException("Flutter SDK not found.")
 
-          apply plugin: 'com.android.application'
-          apply plugin: 'kotlin-android'
-          apply from: "\$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
-
           android {
               namespace "com.komitan.komitan_kutter"
               compileSdkVersion 35
               buildToolsVersion "35.0.0"
-              
+
               defaultConfig {
                   applicationId "com.komitan.komitan_kutter"
                   minSdkVersion 30
