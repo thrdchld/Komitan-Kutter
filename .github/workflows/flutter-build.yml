@@ -67,10 +67,10 @@ jobs:
           subprojects { project.buildDir = "\${rootProject.buildDir}/\${project.name}" }
           subprojects { project.evaluationDependsOn(':app') }
           task clean(type: Delete) { delete rootProject.buildDir }
-GRADLE
+          GRADLE
 
           # App Gradle
-          cat > android/app/build.gradle <<APP
+          cat > android/app/build.gradle <<EOF
           def localProperties = new Properties()
           def localPropertiesFile = rootProject.file('local.properties')
           if (localPropertiesFile.exists()) {
@@ -104,7 +104,7 @@ GRADLE
               implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:\$kotlin_version"
               implementation "androidx.multidex:multidex:2.0.1"
           }
-APP
+          EOF
           # Wrapper 8.5
           mkdir -p android/gradle/wrapper
           echo "distributionUrl=https\://services.gradle.org/distributions/gradle-8.5-all.zip" > android/gradle/wrapper/gradle-wrapper.properties
