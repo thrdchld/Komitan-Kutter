@@ -1,4 +1,4 @@
-name: Build Flutter APK
+name: Build Flutter APK (Stable)
 
 on:
   push:
@@ -12,79 +12,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Java 17
+      # 1. Java 11 (Pasangan sejati Gradle 7 & Android SDK 33)
+      - name: Setup Java 11
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: '11'
 
-      - name: Setup Flutter Stable
+      # 2. Flutter Stable
+      - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.19.0'
+          flutter-version: '3.10.0' # Versi Flutter yang sangat stabil dengan Java 11
           channel: 'stable'
           cache: true
 
-      # 1. Bersihkan folder android lama (jika ada sisa kotor)
-      - name: Clean Android Folder
-        run: rm -rf android
-
-      # 2. Generate ulang folder Android (V2 Embedding)
-      - name: Create Android Platform
-        run: flutter create . --project-name=komitan_kutter --org=com.komitan
-
-      # 3. Inject Izin ke AndroidManifest
-      - name: Inject Android Permissions
-        run: |
-          cat > android/app/src/main/AndroidManifest.xml <<EOF
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.komitan.komitan_kutter">
-              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
-              <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
-              <uses-permission android:name="android.permission.INTERNET"/>
-              <application
-                  android:label="Komitan Kutter"
-                  android:name="\${applicationName}"
-                  android:icon="@mipmap/ic_launcher">
-                  <activity
-                      android:name=".MainActivity"
-                      android:exported="true"
-                      android:launchMode="singleTop"
-                      android:theme="@style/LaunchTheme"
-                      android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
-                      android:hardwareAccelerated="true"
-                      android:windowSoftInputMode="adjustResize">
-                      <meta-data
-                        android:name="io.flutter.embedding.android.NormalTheme"
-                        android:resource="@style/NormalTheme"
-                        />
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN"/>
-                          <category android:name="android.intent.category.LAUNCHER"/>
-                      </intent-filter>
-                  </activity>
-                  <meta-data
-                      android:name="flutterEmbedding"
-                      android:value="2" />
-              </application>
-          </manifest>
-          EOF
-
-      # 4. [WAJIB] Paksa minSdkVersion 24 untuk FFmpeg
-      - name: Force minSdkVersion 24
-        run: |
-          sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 24/' android/app/build.gradle
-          sed -i 's/minSdkVersion 21/minSdkVersion 24/' android/app/build.gradle || true
-
-      # 5. Install dependencies & Build
+      # 3. Dependencies
       - name: Install Dependencies
         run: flutter pub get
 
+      # 4. Build (Tanpa utak-atik Gradle manual!)
+      # Flutter 3.10 akan otomatis menggunakan konfigurasi yang cocok
       - name: Build APK
         run: flutter build apk --release --split-per-abi
 
-      # 6. Upload Hasil
+      # 5. Upload
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: KomitanKutter-Flutter-New-Fix
+          name: KomitanKutter-Stable
           path: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
