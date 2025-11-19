@@ -9,59 +9,70 @@ jobs:
   build:
     runs-on: ubuntu-22.04
 
-    env:
-      JAVA_VERSION: '17'
-      FLUTTER_VERSION: '3.19.0'
-      ANDROID_TARGET_SDK: '35'
-      ANDROID_BUILD_TOOLS: '35.0.0'
-      ANDROID_SDK_ROOT: '/usr/local/lib/android/sdk'
-
     steps:
       - uses: actions/checkout@v4
 
+      # 1. Setup Java 17
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: ${{ env.JAVA_VERSION }}
+          java-version: '17'
 
+      # 2. Setup Flutter
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
+          flutter-version: '3.19.0'
           channel: 'stable'
           cache: true
 
-      # 1. Setup Android SDK (Hapus versi lama, install 35)
-      - name: Setup Android SDK Correctly
+      # 3. [FIX KRUSIAL] Install SDK 35 dengan Validasi
+      - name: Setup Android SDK & Tools
         run: |
-          echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
-          echo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" >> $GITHUB_PATH
-          echo "$ANDROID_SDK_ROOT/platform-tools" >> $GITHUB_PATH
+          echo "🔍 Searching for sdkmanager..."
+          export ANDROID_HOME=/usr/local/lib/android/sdk
           
-          SDKMANAGER=$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager
+          # Cari sdkmanager binary
+          SDKMANAGER=$(find $ANDROID_HOME -name sdkmanager | grep "bin/sdkmanager" | head -n 1)
           
-          echo "--- Cleaning Old Build Tools ---"
-          sudo rm -rf $ANDROID_SDK_ROOT/build-tools/30.*
-          sudo rm -rf $ANDROID_SDK_ROOT/build-tools/31.*
-          sudo rm -rf $ANDROID_SDK_ROOT/build-tools/32.*
-          sudo rm -rf $ANDROID_SDK_ROOT/build-tools/33.*
-          sudo rm -rf $ANDROID_SDK_ROOT/build-tools/34.*
+          if [ -z "$SDKMANAGER" ]; then
+            echo "❌ sdkmanager not found!"
+            exit 1
+          fi
+          
+          echo "✅ Found sdkmanager at: $SDKMANAGER"
+          
+          # Hapus versi lama yang mengganggu
+          echo "🗑️ Cleaning old build-tools..."
+          sudo rm -rf $ANDROID_HOME/build-tools/30.*
+          sudo rm -rf $ANDROID_HOME/build-tools/31.*
+          sudo rm -rf $ANDROID_HOME/build-tools/32.*
+          
+          # Install SDK 35 & Build Tools 35.0.0
+          echo "📥 Installing Android 35 components..."
+          yes | $SDKMANAGER --licenses > /dev/null || true
+          yes | $SDKMANAGER "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+          
+          # VALIDASI: Cek apakah file android.jar benar-benar ada
+          if [ ! -f "$ANDROID_HOME/platforms/android-35/android.jar" ]; then
+             echo "❌ ERROR: Android 35 SDK failed to install!"
+             exit 1
+          fi
+          echo "✅ Android 35 installed successfully."
 
-          echo "--- Installing Target SDK & Tools ---"
-          yes | $SDKMANAGER --licenses > /dev/null
-          yes | $SDKMANAGER "platforms;android-${{ env.ANDROID_TARGET_SDK }}" "build-tools;${{ env.ANDROID_BUILD_TOOLS }}" "platform-tools"
+          # Simpan path ke environment
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
 
-      # 2. Reset Project
+      # 4. Reset Project
       - name: Re-create Android Platform
         run: |
           rm -rf android
           flutter create . --project-name=komitan_kutter --org=com.komitan
 
-      # 3. [FIX BARU] Upgrade Gradle Wrapper ke 8.1.1
-      # Ini wajib karena kita akan memakai AGP 8.1.1
-      - name: Fix Gradle Wrapper Version
+      # 5. Fix Gradle Wrapper (Force 8.1.1)
+      - name: Fix Gradle Wrapper
         run: |
           mkdir -p android/gradle/wrapper
           cat > android/gradle/wrapper/gradle-wrapper.properties <<EOF
@@ -72,7 +83,7 @@ jobs:
           distributionUrl=https\://services.gradle.org/distributions/gradle-8.1.1-all.zip
           EOF
 
-      # 4. Overwrite Root build.gradle (Pakai AGP 8.1.1)
+      # 6. Overwrite Root build.gradle (AGP 8.1.1)
       - name: Overwrite Root build.gradle
         run: |
           cat > android/build.gradle <<EOF
@@ -83,7 +94,6 @@ jobs:
                   mavenCentral()
               }
               dependencies {
-                  // AGP 8.1.1 (Cocok dengan Gradle Wrapper 8.1.1)
                   classpath 'com.android.tools.build:gradle:8.1.1'
                   classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:\$kotlin_version"
               }
@@ -106,7 +116,7 @@ jobs:
           }
           EOF
 
-      # 5. Overwrite App build.gradle
+      # 7. Overwrite App build.gradle (Force SDK 35 & BuildTools 35.0.0)
       - name: Overwrite App build.gradle
         run: |
           cat > android/app/build.gradle <<EOF
@@ -135,8 +145,9 @@ jobs:
 
           android {
               namespace "com.komitan.komitan_kutter"
-              compileSdkVersion ${{ env.ANDROID_TARGET_SDK }}
-              buildToolsVersion "${{ env.ANDROID_BUILD_TOOLS }}"
+              compileSdkVersion 35
+              // KUNCI: Jangan biarkan Gradle memilih sendiri!
+              buildToolsVersion "35.0.0"
 
               compileOptions {
                   sourceCompatibility JavaVersion.VERSION_17
@@ -154,7 +165,7 @@ jobs:
               defaultConfig {
                   applicationId "com.komitan.komitan_kutter"
                   minSdkVersion 24
-                  targetSdkVersion ${{ env.ANDROID_TARGET_SDK }}
+                  targetSdkVersion 35
                   versionCode flutterVersionCode.toInteger()
                   versionName flutterVersionName
                   multiDexEnabled true
@@ -177,7 +188,7 @@ jobs:
           }
           EOF
 
-      # 6. Inject Permissions
+      # 8. Inject Permissions
       - name: Inject Android Permissions
         run: |
           cat > android/app/src/main/AndroidManifest.xml <<EOF
@@ -214,15 +225,15 @@ jobs:
           </manifest>
           EOF
 
-      # 7. Build
+      # 9. Build
       - name: Build APK
         run: |
           flutter pub get
-          flutter build apk --release --split-per-abi
+          flutter build apk --release --split-per-abi --verbose
 
-      # 8. Upload
+      # 10. Upload
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: KomitanKutter-Success-APK
+          name: KomitanKutter-Fixed
           path: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
