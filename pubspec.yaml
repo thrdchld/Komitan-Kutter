@@ -10,14 +10,15 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # [GANTI KE VERSI STABIL]
-  # Versi 4.5.1 berjalan mulus di SDK 31-33. Tidak butuh SDK 35.
-  ffmpeg_kit_flutter_full_gpl: ^4.5.1
+  # [PAKET BARU]
+  # Sesuai permintaan: Versi 4.1.0 (FFmpeg v8.0)
+  ffmpeg_kit_flutter_new: ^4.1.0
 
-  file_picker: ^5.2.5 # Downgrade dikit biar aman
-  permission_handler: ^10.2.0
-  path_provider: ^2.0.15
-  intl: ^0.18.0
+  # Dependencies pendukung
+  file_picker: ^6.1.1
+  permission_handler: ^11.0.1
+  path_provider: ^2.1.1
+  intl: ^0.18.1
   open_file: ^3.3.2
 
 dev_dependencies:
