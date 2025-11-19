@@ -24,19 +24,12 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    FFmpegKitConfig.enableLogCallback((log) {
-      // optional: forward logs if needed
-    });
+    FFmpegKitConfig.enableLogCallback((log) {});
   }
 
   Future<void> cut() async {
     if (Platform.isAndroid) {
-      await [
-        Permission.storage,
-        Permission.manageExternalStorage,
-        Permission.videos,
-        Permission.audio,
-      ].request();
+      await [Permission.storage, Permission.videos, Permission.audio].request();
     }
 
     final res = await FilePicker.platform.pickFiles(type: FileType.video);

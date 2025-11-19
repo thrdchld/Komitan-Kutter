@@ -1,4 +1,4 @@
-name: Build Flutter APK (CI build)
+name: Build Flutter APK (CI - min Android 11)
 
 on:
   push:
@@ -12,7 +12,7 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     env:
-      MY_SDK: \${{ github.workspace }}/custom-android-sdk
+      MY_SDK: ${{ github.workspace }}/custom-android-sdk
 
     steps:
       - name: Checkout
@@ -55,6 +55,23 @@ jobs:
           flutter create . --project-name "$PROJECT_NAME" --org "$ORG" --platforms=android
           echo "sdk.dir=$MY_SDK" > android/local.properties
 
+      - name: Enforce Android 11 minSdkVersion (30) & compile/target SDK 35
+        run: |
+          set -euo pipefail
+          APP_BUILD=android/app/build.gradle
+          if [ -f "$APP_BUILD" ]; then
+            # replace minSdkVersion, targetSdkVersion, compileSdkVersion safely
+            perl -0777 -pe "s/compileSdkVersion\s*\d+/compileSdkVersion 35/s" -i "$APP_BUILD" || true
+            perl -0777 -pe "s/targetSdkVersion\s*\d+/targetSdkVersion 35/s" -i "$APP_BUILD" || true
+            perl -0777 -pe "s/minSdkVersion\s*\d+/minSdkVersion 30/s" -i "$APP_BUILD" || true
+            # ensure buildToolsVersion set to 35.0.0 if present
+            perl -0777 -pe "s/buildToolsVersion\s*\"[^\"]+\"/buildToolsVersion \"35.0.0\"/s" -i "$APP_BUILD" || true
+            echo "Applied minSdkVersion=30, compile/targetSdkVersion=35 in $APP_BUILD"
+          else
+            echo "⚠️ $APP_BUILD not found (flutter create might have failed)."
+            exit 1
+          fi
+
       - name: Inject Permissions (if manifest exists)
         run: |
           set -euo pipefail
@@ -64,13 +81,13 @@ jobs:
             perl -0777 -pe 's|</manifest>|    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>\n    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>\n</manifest>|s' -i "$MANIFEST" || true
             echo "Permissions injected (backup saved)."
           else
-            echo "Manifest tidak ditemukan; skipping permissions."
+            echo "Manifest not found; skipping permission injection."
           fi
 
-      - name: Flutter doctor
+      - name: Flutter doctor (debug)
         run: flutter doctor -v || true
 
-      - name: Build APK
+      - name: Build APK (minSdkVersion=30)
         run: |
           flutter pub get
           flutter build apk --release --split-per-abi --verbose

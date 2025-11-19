@@ -8,8 +8,6 @@ build/
 .pub-cache/
 .idea/
 *.iml
-*.ipr
-*.iws
 android/.gradle/
 android/app/*keystore*
 android/local.properties

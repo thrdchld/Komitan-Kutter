@@ -1,1 +1,1 @@
-This repo was reset to a minimal Flutter skeleton. Android files are generated in CI.
+placeholder
