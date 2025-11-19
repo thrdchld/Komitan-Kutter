@@ -40,74 +40,45 @@ jobs:
           # Install SDK 35 dan Build Tools 35.0.0
           yes | sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools" --sdk_root=$MY_SDK
 
-      # 2. Force SDK Link
-      - name: Force SDK Link
+      # 2. Create Android Project
+      - name: Create Android Project
+        run: |
+          flutter create . --platforms=android --project-name komitan_kutter
+
+      # 3. Force SDK Link & Update Gradle Versions
+      - name: Force SDK Link & Update Gradle Versions
         run: |
           # PAKSA Gradle melihat ke SDK Custom lewat local.properties
           echo "sdk.dir=$MY_SDK" > android/local.properties
 
-      # 3. Config Gradle (Kotlin & SDK Version)
-      - name: Config Gradle
-        run: |
-          # Root Gradle
-          cat > android/build.gradle <<GRADLE
-          buildscript {
-              ext.kotlin_version = '1.9.24'
-              repositories { google(); mavenCentral() }
-              dependencies {
-                  classpath 'com.android.tools.build:gradle:8.7.0'
-                  classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:\$kotlin_version"
-              }
-          }
-          allprojects { repositories { google(); mavenCentral(); maven { url 'https://jitpack.io' } } }
-          rootProject.buildDir = '../build'
-          subprojects { project.buildDir = "\${rootProject.buildDir}/\${project.name}" }
-          subprojects { project.evaluationDependsOn(':app') }
-          task clean(type: Delete) { delete rootProject.buildDir }
-          GRADLE
+          # Update Kotlin version
+          sed -i "s/ext.kotlin_version = '1.9.22'/ext.kotlin_version = '1.9.24'/" android/build.gradle
 
-          # App Gradle
-          cat > android/app/build.gradle <<EOF
-          plugins {
-              id 'com.android.application'
-              id 'kotlin-android'
-          }
+          # Update AGP version
+          sed -i "s/classpath 'com.android.tools.build:gradle:8.3.0'/classpath 'com.android.tools.build:gradle:8.7.0'/" android/build.gradle
 
-          def localProperties = new Properties()
-          def localPropertiesFile = rootProject.file('local.properties')
-          if (localPropertiesFile.exists()) {
-              localPropertiesFile.withReader('UTF-8') { reader -> localProperties.load(reader) }
-          }
-          def flutterRoot = localProperties.getProperty('flutter.sdk')
-          if (flutterRoot == null) throw new GradleException("Flutter SDK not found.")
+          # Update compileSdkVersion
+          sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 35/' android/app/build.gradle
+          sed -i 's/compileSdkVersion 34/compileSdkVersion 35/' android/app/build.gradle
 
-          apply plugin: 'flutter'
-          apply from: "\$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
+          # Update targetSdkVersion
+          sed -i 's/targetSdkVersion flutter.targetSdkVersion/targetSdkVersion 35/' android/app/build.gradle
+          sed -i 's/targetSdkVersion 34/targetSdkVersion 35/' android/app/build.gradle
 
-          android {
-              namespace "com.komitan.komitan_kutter"
-              compileSdkVersion 35
-              buildToolsVersion "35.0.0"
+          # Update buildToolsVersion
+          sed -i 's/buildToolsVersion flutter.buildToolsVersion/buildToolsVersion "35.0.0"/' android/app/build.gradle
 
-              defaultConfig {
-                  applicationId "com.komitan.komitan_kutter"
-                  minSdkVersion 30
-                  targetSdkVersion 35
-                  versionCode 1
-                  versionName "1.0"
-                  multiDexEnabled true
-              }
-              compileOptions { sourceCompatibility JavaVersion.VERSION_1_8; targetCompatibility JavaVersion.VERSION_1_8 }
-              kotlinOptions { jvmTarget = '1.8' }
-          }
-          flutter { source '../..' }
-          dependencies {
-              implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:\$kotlin_version"
-              implementation "androidx.multidex:multidex:2.0.1"
-          }
-          EOF
-          # Wrapper 8.13
-          mkdir -p android/gradle/wrapper
+          # Update minSdkVersion
+          sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 30/' android/app/build.gradle
+          sed -i 's/minSdkVersion 21/minSdkVersion 30/' android/app/build.gradle
+
+          # Add namespace
+          sed -i '/android {/a \    namespace "com.komitan.komitan_kutter"' android/app/build.gradle
+
+          # Add multiDexEnabled
+          sed -i '/versionName flutter.versionName/a \        multiDexEnabled true' android/app/build.gradle
+
+          # Update Gradle wrapper
           echo "distributionUrl=https\://services.gradle.org/distributions/gradle-8.13-bin.zip" > android/gradle/wrapper/gradle-wrapper.properties
           wget -q https://github.com/gradle/gradle/raw/v8.13.0/gradle/wrapper/gradle-wrapper.jar -O android/gradle/wrapper/gradle-wrapper.jar
 
