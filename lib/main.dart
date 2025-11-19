@@ -2,12 +2,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 
-// --- [IMPORT] ---
-// Paket 'ffmpeg_kit_flutter_new_min' tetap menggunakan namespace ini:
-import 'package:ffmpeg_kit_flutter/ffmpeg_kit.dart';
-import 'package:ffmpeg_kit_flutter/ffmpeg_kit_config.dart';
-import 'package:ffmpeg_kit_flutter/return_code.dart';
-// ----------------
+// Import Khusus Paket New Min
+import 'package:ffmpeg_kit_flutter_new_min/ffmpeg_kit.dart';
+import 'package:ffmpeg_kit_flutter_new_min/return_code.dart';
+import 'package:ffmpeg_kit_flutter_new_min/ffmpeg_kit_config.dart';
 
 import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
@@ -48,7 +46,6 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    // Matikan log biar gak berisik
     FFmpegKitConfig.enableLogCallback((log) {}); 
   }
 
@@ -112,7 +109,6 @@ class _HomePageState extends State<HomePage> {
        String outFile = "$outDir/cut_${i}_$timestamp.mp4";
        _lastOutputPath = outFile;
 
-       // Command: Gunakan codec 'copy' untuk kecepatan, atau 'mpeg4' jika copy gagal
        String cmd = "-y -ss $start -to $end -i \"$_selectedVideoPath\" -c copy \"$outFile\"";
        
        await FFmpegKit.execute(cmd).then((session) async {
