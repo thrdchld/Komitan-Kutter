@@ -41,6 +41,7 @@ jobs:
           yes | sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools" --sdk_root=$MY_SDK
 
       # 2. Configure Android Project
+      - name: Configure Android Project
         run: |
           echo "Current directory: $(pwd)"
           ls -la
