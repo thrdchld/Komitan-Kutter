@@ -1,7 +1,7 @@
-name: Build Flutter APK (New FFmpeg 4.1.0)
+name: Build Flutter APK (Java 11 Fix)
 
 on:
-  workflow_dispatch: # Manual trigger
+  workflow_dispatch:
 
 jobs:
   build:
@@ -10,68 +10,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 1. Setup Java 17 (Wajib untuk Kotlin 1.8+)
-      - name: Setup Java 17
+      # 1. [FIX] Gunakan Java 11 (Paling stabil untuk Flutter 3.10 & Gradle 7)
+      - name: Setup Java 11
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: '11'
 
-      # 2. Setup Flutter Stable
+      # 2. Setup Flutter 3.10.0
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.19.0'
+          flutter-version: '3.10.0'
           channel: 'stable'
           cache: true
 
-      # 3. Hapus & Buat Ulang Folder Android (Standard V2)
-      - name: Re-generate Android Folder
-        run: |
-          rm -rf android
-          flutter create . --project-name=komitan_kutter --org=com.komitan --platforms=android
+      # 3. Reset Folder Android
+      - name: Clean Android Folder
+        run: rm -rf android
 
-      # 4. [FIX] Overwrite Root build.gradle dengan Kotlin 1.9.0
-      # Paket ffmpeg_kit_flutter_new butuh Kotlin minimal 1.8.22
-      # Kita kasih 1.9.0 biar aman & kompatibel dengan Java 17
-      - name: Force Kotlin 1.9.0 & AGP
-        run: |
-          cat > android/build.gradle <<EOF
-          buildscript {
-              ext.kotlin_version = '1.9.0'
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-              dependencies {
-                  // AGP 7.3.0 stabil untuk Flutter 3.19
-                  classpath 'com.android.tools.build:gradle:7.3.0'
-                  classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:\$kotlin_version"
-              }
-          }
-          allprojects {
-              repositories {
-                  google()
-                  mavenCentral()
-                  maven { url 'https://jitpack.io' }
-              }
-          }
-          rootProject.buildDir = '../build'
-          subprojects {
-              project.buildDir = "\${rootProject.buildDir}/\${project.name}"
-          }
-          subprojects {
-              project.evaluationDependsOn(':app')
-          }
-          task clean(type: Delete) {
-              delete rootProject.buildDir
-          }
-          EOF
+      # 4. Buat Ulang Struktur Android
+      - name: Create Standard Android Project
+        run: flutter create . --project-name=komitan_kutter --org=com.komitan --platforms=android
 
-      # 5. [FIX] Inject Permissions & MinSDK 24
-      - name: Inject Permissions & Config
+      # 5. Inject Izin & MinSDK 24
+      - name: Inject Config & Permissions
         run: |
-          # Inject Manifest Permission
+          # Inject Manifest
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           cat > $MANIFEST <<EOF
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
@@ -108,12 +73,21 @@ jobs:
           </manifest>
           EOF
           
-          # Inject minSdk 24 (Syarat paket ffmpeg baru)
+          # Inject MinSDK 24 (Wajib untuk FFmpeg)
           sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 24/' android/app/build.gradle
+          # Backup jika format beda
+          sed -i 's/minSdkVersion [0-9]*/minSdkVersion 24/' android/app/build.gradle
 
       # 6. Install Dependencies
-      - name: Install Dependencies
-        run: flutter pub get
+      # Pastikan kita pakai paket FFmpeg yang STABIL (4.5.1 atau 5.1.0)
+      # Jangan pakai versi 'new' (4.1.0) yang minta SDK 35
+      - name: Force Stable FFmpeg Dependency
+        run: |
+          flutter pub remove ffmpeg_kit_flutter_new || true
+          flutter pub remove ffmpeg_kit_flutter_full_gpl || true
+          # Gunakan versi 5.1.0 yang ada di MavenCentral
+          flutter pub add ffmpeg_kit_flutter_full_gpl:^5.1.0
+          flutter pub get
 
       # 7. Build APK
       - name: Build APK
@@ -123,5 +97,5 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: KomitanKutter-New-4.1.0
+          name: KomitanKutter-Java11-APK
           path: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
