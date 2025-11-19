@@ -51,6 +51,9 @@ jobs:
           # PAKSA Gradle melihat ke SDK Custom lewat local.properties
           echo "sdk.dir=$MY_SDK" > android/local.properties
 
+          # Wait for android folder to be created
+          sleep 5
+
           # Update Kotlin version
           sed -i "s/ext.kotlin_version = '1.9.22'/ext.kotlin_version = '1.9.24'/" android/build.gradle
 
