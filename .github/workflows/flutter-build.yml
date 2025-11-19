@@ -40,12 +40,9 @@ jobs:
           # Install SDK 35 dan Build Tools 35.0.0
           yes | sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools" --sdk_root=$MY_SDK
 
-      # 2. Generate Project & PAKSA LINK KE SDK BARU
-      - name: Create Project & Force SDK Link
+      # 2. Force SDK Link
+      - name: Force SDK Link
         run: |
-          rm -rf android
-          flutter create . --platforms=android --project-name komitan_kutter
-          
           # PAKSA Gradle melihat ke SDK Custom lewat local.properties
           echo "sdk.dir=$MY_SDK" > android/local.properties
 
@@ -74,7 +71,6 @@ jobs:
           plugins {
               id 'com.android.application'
               id 'kotlin-android'
-              id 'flutter'
           }
 
           def localProperties = new Properties()
@@ -84,6 +80,9 @@ jobs:
           }
           def flutterRoot = localProperties.getProperty('flutter.sdk')
           if (flutterRoot == null) throw new GradleException("Flutter SDK not found.")
+
+          apply plugin: 'flutter'
+          apply from: "\$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
 
           android {
               namespace "com.komitan.komitan_kutter"
