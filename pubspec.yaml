@@ -1,18 +1,26 @@
 name: komitan_kutter
-description: Video Cutter
+description: "A new Flutter project."
+publish_to: 'none'
 version: 1.0.0+1
+
 environment:
-  sdk: '>=3.0.0 <4.0.0'
+  sdk: '>=3.10.0 <4.0.0'
+
 dependencies:
   flutter:
     sdk: flutter
-  ffmpeg_kit_flutter_new_min: ^3.1.0
-  file_picker: ^6.1.1
-  permission_handler: ^11.0.1
-  path_provider: ^2.1.1
-  intl: ^0.18.1
-  open_file: ^3.3.2
+  cupertino_icons: ^1.0.8
+  file_picker: ^10.3.6
+  path_provider: ^2.1.5
+  permission_handler: ^12.0.1
+  archive: ^4.0.7
+  ffmpeg_kit_flutter_new: ^4.1.0
+  video_player: ^2.10.1
+
 dev_dependencies:
-  flutter_lints: ^2.0.0
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
 flutter:
   uses-material-design: true
