@@ -1,14 +1,33 @@
+<<<<<<< HEAD
 name: Build Flutter APK (Force SDK 35)
+=======
+name: Build Flutter APK (Private SDK 35)
+>>>>>>> 2734f33bf8d52cc148d1fc44c78bf456e040b7e7
 
 on:
+  # 1. Jalan otomatis HANYA jika file YAML ini yang diubah
+  push:
+    branches:
+      - flutter-version
+    paths:
+      - '.github/workflows/flutter-build.yml'
+
+  # 2. Tombol Manual (Wajib ada buat jaga-jaga)
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-22.04
     env:
+<<<<<<< HEAD
       # Lokasi SDK Kustom di dalam workspace
       MY_SDK: ${{ github.workspace }}/custom-android-sdk
+=======
+      JAVA_VERSION: '17'
+      FLUTTER_VERSION: '3.19.0'
+      # Lokasi SDK Custom di dalam workspace (Aman dari file sistem yang korup)
+      MY_SDK_ROOT: ${{ github.workspace }}/android-sdk-custom
+>>>>>>> 2734f33bf8d52cc148d1fc44c78bf456e040b7e7
 
     steps:
       - uses: actions/checkout@v4
@@ -20,20 +39,53 @@ jobs:
         with:
           flutter-version: '3.19.0'
 
+<<<<<<< HEAD
       # 1. Install SDK 35 di Folder Kustom
       - name: Setup Custom SDK 35
+=======
+      # 1. [FIX UTAMA] Install SDK 35 Secara Private & Bersih
+      # Ini memperbaiki error "Failed to load resources table in APK android-35"
+      - name: Setup Clean Android SDK 35
+>>>>>>> 2734f33bf8d52cc148d1fc44c78bf456e040b7e7
         run: |
           mkdir -p $MY_SDK/cmdline-tools
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmd.zip
           unzip -q cmd.zip -d $MY_SDK/cmdline-tools
           mv $MY_SDK/cmdline-tools/cmdline-tools $MY_SDK/cmdline-tools/latest
           
+<<<<<<< HEAD
           export PATH=$MY_SDK/cmdline-tools/latest/bin:$PATH
           yes | sdkmanager --licenses --sdk_root=$MY_SDK > /dev/null
           yes | sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools" --sdk_root=$MY_SDK
 
       # 2. Generate Project & PAKSA LINK KE SDK BARU
       - name: Create Project & Force SDK Link
+=======
+          # Download Command Line Tools resmi dari Google
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline.zip
+          unzip -q cmdline.zip -d $MY_SDK_ROOT/cmdline-tools
+          # Struktur folder wajib: cmdline-tools/latest/bin
+          mv $MY_SDK_ROOT/cmdline-tools/cmdline-tools $MY_SDK_ROOT/cmdline-tools/latest
+          
+          # Set Environment Variables agar Gradle melihat SDK ini
+          echo "ANDROID_HOME=$MY_SDK_ROOT" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$MY_SDK_ROOT" >> $GITHUB_ENV
+          echo "$MY_SDK_ROOT/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "$MY_SDK_ROOT/platform-tools" >> $GITHUB_PATH
+          
+          # Install Paket Wajib
+          export PATH=$MY_SDK_ROOT/cmdline-tools/latest/bin:$PATH
+          
+          echo "📝 Accepting Licenses..."
+          yes | sdkmanager --licenses > /dev/null
+          
+          echo "📦 Installing Android 35 & Build Tools..."
+          # Paket yang dibutuhkan oleh ffmpeg_kit_flutter_new_min
+          yes | sdkmanager "platforms;android-35" "build-tools;34.0.0" "platform-tools"
+
+      # 2. Reset Project Android (Hapus yang lama & Buat Baru)
+      - name: Re-generate Android Project
+>>>>>>> 2734f33bf8d52cc148d1fc44c78bf456e040b7e7
         run: |
           rm -rf android
           flutter create . --platforms=android
@@ -45,21 +97,33 @@ jobs:
           # Cek isinya
           cat android/local.properties
 
+<<<<<<< HEAD
       # 3. Config Gradle (Kotlin & SDK Version)
       - name: Config Gradle
         run: |
           # Root Gradle: Kotlin 1.9.20
           cat > android/build.gradle <<GRADLE
+=======
+      # 3. Inject Konfigurasi Modern (Kotlin 1.9 + AGP 8)
+      # Wajib agar kompatibel dengan SDK 35
+      - name: Configure Gradle for SDK 35
+        run: |
+          # Overwrite Root build.gradle
+          cat > android/build.gradle <<EOF
+>>>>>>> 2734f33bf8d52cc148d1fc44c78bf456e040b7e7
           buildscript {
+              // Kotlin 1.9.20 wajib untuk paket baru ini
               ext.kotlin_version = '1.9.20'
               repositories { google(); mavenCentral() }
               dependencies {
+                  // AGP 8.2.0 support penuh SDK 35
                   classpath 'com.android.tools.build:gradle:8.2.0'
                   classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:\$kotlin_version"
               }
           }
           allprojects { repositories { google(); mavenCentral(); maven { url 'https://jitpack.io' } } }
           rootProject.buildDir = '../build'
+<<<<<<< HEAD
           subprojects { project.buildDir = "\${rootProject.buildDir}/\${project.name}" }
           subprojects { project.evaluationDependsOn(':app') }
           task clean(type: Delete) { delete rootProject.buildDir }
@@ -78,6 +142,43 @@ GRADLE
           apply plugin: 'com.android.application'
           apply plugin: 'kotlin-android'
           apply from: "\$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
+=======
+          subprojects {
+              project.buildDir = "\${rootProject.buildDir}/\${project.name}"
+          }
+          subprojects {
+              project.evaluationDependsOn(':app')
+          }
+          task clean(type: Delete) {
+              delete rootProject.buildDir
+          }
+          EOF
+
+          # Set Gradle Wrapper ke 8.5 (Pasangan AGP 8.2.0)
+          mkdir -p android/gradle/wrapper
+          cat > android/gradle/wrapper/gradle-wrapper.properties <<EOF
+          distributionBase=GRADLE_USER_HOME
+          distributionPath=wrapper/dists
+          zipStoreBase=GRADLE_USER_HOME
+          zipStorePath=wrapper/dists
+          distributionUrl=https\://services.gradle.org/distributions/gradle-8.5-all.zip
+          EOF
+
+      # 4. Inject Izin & MinSDK
+      - name: Inject Permissions & MinSDK
+        run: |
+          # Inject Izin ke Manifest
+          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>' android/app/src/main/AndroidManifest.xml
+          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>' android/app/src/main/AndroidManifest.xml
+          
+          # Inject MinSDK 24 & CompileSDK 35 (Wajib)
+          sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 24/' android/app/build.gradle
+          sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 35/' android/app/build.gradle
+          sed -i 's/targetSdkVersion flutter.targetSdkVersion/targetSdkVersion 35/' android/app/build.gradle
+          
+          # Inject Namespace (Wajib untuk AGP 8)
+          sed -i '/android {/a \    namespace "com.komitan.komitan_kutter"' android/app/build.gradle
+>>>>>>> 2734f33bf8d52cc148d1fc44c78bf456e040b7e7
 
           android {
               namespace "com.komitan.komitan_kutter"
