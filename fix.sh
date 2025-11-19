@@ -1,77 +1,43 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# prepare_for_ci_rebuild.sh
+# - Menghapus platform files lokal
+# - Menulis ulang pubspec, main.dart, gradle files minimal
+# - Menulis GitHub Actions workflow untuk build di CI (runner akan install Flutter)
+
 echo ""
-echo "=============================================="
-echo " 🚨 FULL FLUTTER PROJECT RESET & REBUILD"
-echo "=============================================="
+echo "=========================================="
+echo " Prepare repo for CI-only rebuild (SAFE)"
+echo "=========================================="
 echo ""
 
-###############################
-# 0. SAFETY CHECK
-###############################
+# 0. Safety: require git repo
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  echo "❌ Bukan repo git! Script dibatalkan."
+  echo "❌ Bukan repository git. Batalkan."
   exit 1
 fi
 
-echo "🔒 Membuat backup branch..."
-BRANCH="backup-before-reset-$(date +%Y%m%d%H%M%S)"
+# 0b. Backup commit & branch
+echo "🔒 Membuat backup commit & branch..."
 git add -A || true
-git commit -m "[auto] backup sebelum reset full" || true
-git branch "$BRANCH"
-echo "✔ Backup branch dibuat: $BRANCH"
+git commit -m "[auto] backup before CI-prep" || true
+BACKUP_BRANCH="backup-ci-prep-$(date +%Y%m%d%H%M%S)"
+git branch "$BACKUP_BRANCH" || true
+echo "✔ Backup branch: $BACKUP_BRANCH"
 
+# 1. Remove platform dirs & build artefacts (keamanan: tidak menghapus .git)
+echo "🧹 Menghapus direktori platform & build lokal..."
+rm -rf android ios linux macos windows web build test .dart_tool .package .packages .metadata
+rm -f pubspec.lock
+# keep .git and other config files
 
-###############################
-# 1. HAPUS FILE-FILE PROJECT
-###############################
-echo ""
-echo "🧹 Menghapus file & folder project Flutter lama..."
+# ensure directories
+mkdir -p lib android/app/src/main
 
-rm -rf android \
-       ios \
-       linux \
-       macos \
-       windows \
-       web \
-       build \
-       test \
-       .dart_tool \
-       .metadata
-
-rm -f pubspec.yaml pubspec.lock
-
-rm -rf lib
-mkdir -p lib
-
-echo "✔ Semua platform & config lama dihapus"
-
-
-###############################
-# 2. REBUILD PROJECT
-###############################
-echo ""
-echo "🔧 Membuat ulang project Flutter..."
-
-PROJECT_NAME="komitan_kutter"
-ORG="com.komitan"
-
-flutter create . \
-  --project-name="$PROJECT_NAME" \
-  --org="$ORG" \
-  --platforms=android
-
-echo "✔ Flutter project berhasil direbuild"
-
-
-###############################
-# 3. FIX PUBSPEC (JIKA PERLU OVERRIDE)
-###############################
-echo ""
-echo "📝 Menulis ulang pubspec.yaml..."
-
-cat > pubspec.yaml <<EOF
+# 2. Write pubspec.yaml (valid package name)
+echo "📝 Menulis pubspec.yaml..."
+cat > pubspec.yaml <<'YAML'
 name: komitan_kutter
 description: Video Cutter Offline
 publish_to: none
@@ -98,18 +64,11 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-EOF
+YAML
 
-echo "✔ pubspec.yaml selesai ditulis"
-
-
-###############################
-# 4. WRITE MAIN.DART
-###############################
-echo ""
-echo "📝 Menulis ulang lib/main.dart..."
-
-cat > lib/main.dart <<'EOF'
+# 3. Write lib/main.dart
+echo "📝 Menulis lib/main.dart..."
+cat > lib/main.dart <<'DART'
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
@@ -133,11 +92,7 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> cut() async {
     if (Platform.isAndroid) {
-      await [
-        Permission.storage,
-        Permission.videos,
-        Permission.audio,
-      ].request();
+      await [Permission.storage, Permission.videos, Permission.audio].request();
     }
 
     final pick = await FilePicker.platform.pickFiles(type: FileType.video);
@@ -168,32 +123,171 @@ class _HomePageState extends State<HomePage> {
     );
   }
 }
-EOF
+DART
 
-echo "✔ main.dart selesai ditulis"
+# 4. Minimal Android Gradle files (will be overwritten by CI's flutter create if used,
+#    but having them avoids some missing-file errors in certain tools)
+echo "📝 Menulis android/build.gradle & android/app/build.gradle (minimal placeholders)..."
 
+cat > android/build.gradle <<'GRADLE'
+buildscript {
+    ext.kotlin_version = '1.9.20'
+    repositories { google(); mavenCentral() }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.2.0'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:${kotlin_version}"
+    }
+}
+allprojects { repositories { google(); mavenCentral(); maven { url 'https://jitpack.io' } } }
+rootProject.buildDir = '../build'
+subprojects { project.buildDir = "${rootProject.buildDir}/${project.name}" }
+subprojects { project.evaluationDependsOn(':app') }
+task clean(type: Delete) { delete rootProject.buildDir }
+GRADLE
 
-###############################
-# 5. SYNC DEPENDENCIES
-###############################
+cat > android/app/build.gradle <<'GRADLE_APP'
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file('local.properties')
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withReader('UTF-8') { reader -> localProperties.load(reader) }
+}
+def flutterRoot = localProperties.getProperty('flutter.sdk')
+if (flutterRoot == null) throw new GradleException("Flutter SDK not found.")
+
+apply plugin: 'com.android.application'
+apply plugin: 'kotlin-android'
+apply from: "${flutterRoot}/packages/flutter_tools/gradle/flutter.gradle"
+
+android {
+    namespace "com.komitan.komitan_kutter"
+    compileSdkVersion 35
+    buildToolsVersion "35.0.0"
+
+    defaultConfig {
+        applicationId "com.komitan.komitan_kutter"
+        minSdkVersion 24
+        targetSdkVersion 35
+        versionCode 1
+        versionName "1.0"
+        multiDexEnabled true
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_1_8; targetCompatibility JavaVersion.VERSION_1_8 }
+    kotlinOptions { jvmTarget = '1.8' }
+}
+flutter { source '../..' }
+dependencies {
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:${kotlin_version}"
+    implementation "androidx.multidex:multidex:2.0.1"
+}
+GRADLE_APP
+
+# 5. Write GitHub Actions workflow file (CI will install Flutter & run create+build)
+echo "📝 Menulis .github/workflows/flutter-build.yml (CI build)..."
+mkdir -p .github/workflows
+
+cat > .github/workflows/flutter-build.yml <<'YAML'
+name: Build Flutter APK (CI build)
+
+on:
+  push:
+    paths:
+      - '.github/workflows/flutter-build.yml'
+      - '**.dart'
+      - 'lib/**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    env:
+      MY_SDK: ${{ github.workspace }}/custom-android-sdk
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java (Temurin 17)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.19.0'
+
+      - name: Debug info
+        run: |
+          echo "WORKSPACE: $GITHUB_WORKSPACE"
+          flutter --version || true
+
+      - name: Setup Custom SDK 35
+        run: |
+          set -euo pipefail
+          mkdir -p "$MY_SDK/cmdline-tools"
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmd.zip
+          unzip -q cmd.zip -d "$MY_SDK/cmdline-tools"
+          if [ -d "$MY_SDK/cmdline-tools/cmdline-tools" ]; then
+            mv "$MY_SDK/cmdline-tools/cmdline-tools" "$MY_SDK/cmdline-tools/latest" || true
+          else
+            mkdir -p "$MY_SDK/cmdline-tools/latest"
+            mv "$MY_SDK/cmdline-tools"/* "$MY_SDK/cmdline-tools/latest" 2>/dev/null || true
+          fi
+          SDKMANAGER="$MY_SDK/cmdline-tools/latest/bin/sdkmanager"
+          export PATH="$MY_SDK/cmdline-tools/latest/bin:$PATH"
+          { yes | "$SDKMANAGER" --licenses --sdk_root="$MY_SDK" >/dev/null 2>&1 || true; }
+          { yes | "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0" "platform-tools" --sdk_root="$MY_SDK" >/dev/null 2>&1 || true; }
+
+      - name: Create/regen android project (force valid package)
+        run: |
+          set -euo pipefail
+          # Force valid project name so Dart package name is valid
+          PROJECT_NAME="komitan_kutter"
+          ORG="com.komitan"
+          rm -rf android
+          flutter create . --project-name "$PROJECT_NAME" --org "$ORG" --platforms=android
+          echo "sdk.dir=$MY_SDK" > android/local.properties
+
+      - name: Inject Permissions (if manifest exists)
+        run: |
+          set -euo pipefail
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          if [ -f "$MANIFEST" ]; then
+            cp "$MANIFEST" "$MANIFEST.bak"
+            perl -0777 -pe 's|</manifest>|    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>\n    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>\n</manifest>|s' -i "$MANIFEST" || true
+            echo "Permissions injected (backup saved as $MANIFEST.bak)."
+          else
+            echo "Manifest tidak ditemukan; melewati injeksi permission."
+          fi
+
+      - name: Flutter doctor
+        run: flutter doctor -v || true
+
+      - name: Build APK
+        run: |
+          flutter pub get
+          flutter build apk --release --split-per-abi --verbose
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: KomitanKutter-APK
+          path: build/app/outputs/flutter-apk/*.apk
+YAML
+
+# 6. Final instructions
 echo ""
-echo "📦 Menjalankan flutter pub get..."
-flutter pub get
-echo "✔ Dependencies siap"
-
-
-###############################
-# 6. FINAL MESSAGE
-###############################
+echo "=========================================="
+echo " DONE: repo prepared for CI-only rebuild"
+echo "=========================================="
 echo ""
-echo "=============================================="
-echo " 🎉 SELESAI — PROJECT SUDAH DIBANGUN ULANG"
-echo "=============================================="
+echo "Langkah selanjutnya (lokal):"
+echo " 1) cek perubahan: git status"
+echo " 2) commit & push:"
+echo "      git add ."
+echo "      git commit -m 'ci: prepare repo for CI-only flutter rebuild'"
+echo "      git push origin HEAD"
 echo ""
-echo "➜ Lakukan commit:"
-echo "   git add ."
-echo "   git commit -m 'feat: rebuild project full'"
-echo ""
-echo "➜ Jalankan APK build:"
-echo "   flutter build apk --release"
+echo "Setelah push, GitHub Actions akan menjalankan workflow dan membangun APK di runner."
 echo ""
