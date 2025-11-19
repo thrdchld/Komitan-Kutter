@@ -40,19 +40,18 @@ jobs:
           # Install SDK 35 dan Build Tools 35.0.0
           yes | sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools" --sdk_root=$MY_SDK
 
-      # 2. Create Android Project
-      - name: Create Android Project
+      # 2. Create Android Project & Configure
+      - name: Create Android Project & Configure
         run: |
+          echo "Current directory: $(pwd)"
+          ls -la
           flutter create . --platforms=android --project-name komitan_kutter
+          echo "After flutter create:"
+          ls -la
+          ls -la android/
 
-      # 3. Force SDK Link & Update Gradle Versions
-      - name: Force SDK Link & Update Gradle Versions
-        run: |
           # PAKSA Gradle melihat ke SDK Custom lewat local.properties
           echo "sdk.dir=$MY_SDK" > android/local.properties
-
-          # Wait for android folder to be created
-          sleep 5
 
           # Update Kotlin version
           sed -i "s/ext.kotlin_version = '1.9.22'/ext.kotlin_version = '1.9.24'/" android/build.gradle
