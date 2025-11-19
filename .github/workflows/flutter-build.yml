@@ -40,13 +40,9 @@ jobs:
           # Install SDK 35 dan Build Tools 35.0.0
           yes | sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools" --sdk_root=$MY_SDK
 
-      # 2. Create Android Project & Configure
-      - name: Create Android Project & Configure
+      # 2. Configure Android Project
         run: |
           echo "Current directory: $(pwd)"
-          ls -la
-          flutter create . --platforms=android --project-name komitan_kutter
-          echo "After flutter create:"
           ls -la
           ls -la android/
 
@@ -54,31 +50,25 @@ jobs:
           echo "sdk.dir=$MY_SDK" > android/local.properties
 
           # Update Kotlin version
-          sed -i "s/ext.kotlin_version = '1.9.22'/ext.kotlin_version = '1.9.24'/" android/build.gradle
+          sed -i 's/version "1.9.22"/version "1.9.24"/' android/build.gradle.kts
 
           # Update AGP version
-          sed -i "s/classpath 'com.android.tools.build:gradle:8.3.0'/classpath 'com.android.tools.build:gradle:8.7.0'/" android/build.gradle
+          sed -i 's/version "8.3.0"/version "8.7.0"/' android/build.gradle.kts
 
-          # Update compileSdkVersion
-          sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 35/' android/app/build.gradle
-          sed -i 's/compileSdkVersion 34/compileSdkVersion 35/' android/app/build.gradle
+          # Update namespace
+          sed -i 's/namespace = "com.example.komitan_kutter"/namespace = "com.komitan.komitan_kutter"/' android/app/build.gradle.kts
 
-          # Update targetSdkVersion
-          sed -i 's/targetSdkVersion flutter.targetSdkVersion/targetSdkVersion 35/' android/app/build.gradle
-          sed -i 's/targetSdkVersion 34/targetSdkVersion 35/' android/app/build.gradle
+          # Update compileSdk
+          sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 35/' android/app/build.gradle.kts
 
-          # Update buildToolsVersion
-          sed -i 's/buildToolsVersion flutter.buildToolsVersion/buildToolsVersion "35.0.0"/' android/app/build.gradle
+          # Update minSdk
+          sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 30/' android/app/build.gradle.kts
 
-          # Update minSdkVersion
-          sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 30/' android/app/build.gradle
-          sed -i 's/minSdkVersion 21/minSdkVersion 30/' android/app/build.gradle
-
-          # Add namespace
-          sed -i '/android {/a \    namespace "com.komitan.komitan_kutter"' android/app/build.gradle
+          # Update targetSdk
+          sed -i 's/targetSdk = flutter.targetSdkVersion/targetSdk = 35/' android/app/build.gradle.kts
 
           # Add multiDexEnabled
-          sed -i '/versionName flutter.versionName/a \        multiDexEnabled true' android/app/build.gradle
+          sed -i '/versionName = flutter.versionName/a \        multiDexEnabled = true' android/app/build.gradle.kts
 
           # Update Gradle wrapper
           echo "distributionUrl=https\://services.gradle.org/distributions/gradle-8.13-bin.zip" > android/gradle/wrapper/gradle-wrapper.properties
