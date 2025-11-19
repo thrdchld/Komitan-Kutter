@@ -10,7 +10,7 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     env:
-      MY_SDK: ${{ github.workspace }}/custom-android-sdk
+      MY_SDK: \${{ github.workspace }}/custom-android-sdk
 
     steps:
       - uses: actions/checkout@v4
@@ -25,28 +25,25 @@ jobs:
       # 1. Install SDK 35 di Folder Kustom
       - name: Setup Custom SDK 35
         run: |
-          mkdir -p $MY_SDK/cmdline-tools
+          mkdir -p \$MY_SDK/cmdline-tools
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmd.zip
-          unzip -q cmd.zip -d $MY_SDK/cmdline-tools
-          mv $MY_SDK/cmdline-tools/cmdline-tools $MY_SDK/cmdline-tools/latest
+          unzip -q cmd.zip -d \$MY_SDK/cmdline-tools
+          mv \$MY_SDK/cmdline-tools/cmdline-tools \$MY_SDK/cmdline-tools/latest || true
           
-          export PATH=$MY_SDK/cmdline-tools/latest/bin:$PATH
-          yes | sdkmanager --licenses --sdk_root=$MY_SDK > /dev/null
-          # Install SDK 35 dan Build Tools 35.0.0 (Bukan 34)
-          yes | sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools" --sdk_root=$MY_SDK
+          export PATH=\$MY_SDK/cmdline-tools/latest/bin:\$PATH
+          yes | sdkmanager --licenses --sdk_root=\$MY_SDK > /dev/null
+          yes | sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools" --sdk_root=\$MY_SDK
 
       # 2. Generate Project
       - name: Create Project
         run: |
           rm -rf android
           flutter create . --platforms=android
-          # PAKSA SDK PATH DI LOCAL.PROPERTIES
-          echo "sdk.dir=$MY_SDK" > android/local.properties
+          echo "sdk.dir=\$MY_SDK" > android/local.properties
 
       # 3. Config Gradle (Kotlin & SDK Version)
       - name: Config Gradle
         run: |
-          # Root Gradle: Kotlin 1.9.20 & AGP 8.2.0
           cat > android/build.gradle <<GRADLE
           buildscript {
               ext.kotlin_version = '1.9.20'
@@ -63,7 +60,6 @@ jobs:
           task clean(type: Delete) { delete rootProject.buildDir }
 GRADLE
 
-          # App Gradle: Force SDK 35 & BuildTools 35.0.0
           cat > android/app/build.gradle <<APP
           def localProperties = new Properties()
           def localPropertiesFile = rootProject.file('local.properties')
@@ -99,16 +95,20 @@ GRADLE
               implementation "androidx.multidex:multidex:2.0.1"
           }
 APP
-          # Wrapper 8.5 (Wajib untuk AGP 8.2)
           mkdir -p android/gradle/wrapper
           echo "distributionUrl=https\://services.gradle.org/distributions/gradle-8.5-all.zip" > android/gradle/wrapper/gradle-wrapper.properties
 
-      # 4. Inject Permissions
+      # 4. Inject Permissions (only if manifest exists)
       - name: Inject Permissions
         run: |
-          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>' android/app/src/main/AndroidManifest.xml
-          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>' android/app/src/main/AndroidManifest.xml
-          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>' android/app/src/main/AndroidManifest.xml
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          if [ -f "\$MANIFEST" ]; then
+            cp "\$MANIFEST" "\$MANIFEST.bak"
+            perl -0777 -pe 's|</manifest>|    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>\n    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>\n</manifest>|s' -i "\$MANIFEST"
+            echo "Permissions injected (backup saved as \$MANIFEST.bak). NOTE: consider using READ_MEDIA_* for Android 13+ or Android photo picker for one-time access."
+          else
+            echo "⚠️ AndroidManifest.xml tidak ditemukan, melewati injeksi permission."
+          fi
 
       # 5. Build
       - name: Build APK

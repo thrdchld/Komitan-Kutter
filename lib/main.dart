@@ -29,14 +29,15 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> cut() async {
-    // Request multiple permissions for Android 13+ compliance
+    // Request permissions: untuk Android 13+ gunakan READ_MEDIA_* (handled by permission_handler)
     if (Platform.isAndroid) {
-      Map<Permission, PermissionStatus> statuses = await [
-        Permission.storage,
+      final perms = <Permission>[
+        Permission.storage, // fallback for older devices
         Permission.manageExternalStorage,
         Permission.videos,
         Permission.audio,
-      ].request();
+      ];
+      await perms.request();
     }
 
     var res = await FilePicker.platform.pickFiles(type: FileType.video);
