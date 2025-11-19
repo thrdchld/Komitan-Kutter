@@ -9,69 +9,70 @@ jobs:
   build:
     runs-on: ubuntu-22.04
 
+    env:
+      JAVA_VERSION: '17'
+      FLUTTER_VERSION: '3.19.0'
+      # Kita tentukan lokasi SDK di folder HOME runner
+      MY_ANDROID_SDK: ${{ github.workspace }}/my-android-sdk
+
     steps:
       - uses: actions/checkout@v4
 
-      # 1. Setup Java 17
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: ${{ env.JAVA_VERSION }}
 
-      # 2. Setup Flutter
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.19.0'
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: 'stable'
           cache: true
 
-      # 3. [FIX KRUSIAL] Install SDK 35 dengan Validasi
-      - name: Setup Android SDK & Tools
+      # 1. [SOLUSI TOTAL] Setup SDK Pribadi yang Bersih
+      - name: Setup Clean Private Android SDK
         run: |
-          echo "🔍 Searching for sdkmanager..."
-          export ANDROID_HOME=/usr/local/lib/android/sdk
+          echo "🚀 Creating Private SDK at $MY_ANDROID_SDK"
+          mkdir -p $MY_ANDROID_SDK/cmdline-tools
           
-          # Cari sdkmanager binary
-          SDKMANAGER=$(find $ANDROID_HOME -name sdkmanager | grep "bin/sdkmanager" | head -n 1)
+          # Download Command Line Tools
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline.zip
+          unzip -q cmdline.zip -d $MY_ANDROID_SDK/cmdline-tools
+          mv $MY_ANDROID_SDK/cmdline-tools/cmdline-tools $MY_ANDROID_SDK/cmdline-tools/latest
           
-          if [ -z "$SDKMANAGER" ]; then
-            echo "❌ sdkmanager not found!"
-            exit 1
-          fi
+          # Set Environment Variables secara GLOBAL untuk step selanjutnya
+          echo "ANDROID_HOME=$MY_ANDROID_SDK" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$MY_ANDROID_SDK" >> $GITHUB_ENV
           
-          echo "✅ Found sdkmanager at: $SDKMANAGER"
-          
-          # Hapus versi lama yang mengganggu
-          echo "🗑️ Cleaning old build-tools..."
-          sudo rm -rf $ANDROID_HOME/build-tools/30.*
-          sudo rm -rf $ANDROID_HOME/build-tools/31.*
-          sudo rm -rf $ANDROID_HOME/build-tools/32.*
-          
-          # Install SDK 35 & Build Tools 35.0.0
-          echo "📥 Installing Android 35 components..."
-          yes | $SDKMANAGER --licenses > /dev/null || true
-          yes | $SDKMANAGER "platforms;android-35" "build-tools;35.0.0" "platform-tools"
-          
-          # VALIDASI: Cek apakah file android.jar benar-benar ada
-          if [ ! -f "$ANDROID_HOME/platforms/android-35/android.jar" ]; then
-             echo "❌ ERROR: Android 35 SDK failed to install!"
-             exit 1
-          fi
-          echo "✅ Android 35 installed successfully."
+          # Update PATH agar sdkmanager baru yang dipanggil
+          echo "$MY_ANDROID_SDK/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "$MY_ANDROID_SDK/platform-tools" >> $GITHUB_PATH
 
-          # Simpan path ke environment
-          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
-          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
+      # 2. Install Paket SDK 35 (Di Folder Pribadi)
+      - name: Install SDK 35 Components
+        run: |
+          # Panggil sdkmanager dari lokasi baru
+          SDKBIN="$MY_ANDROID_SDK/cmdline-tools/latest/bin/sdkmanager"
+          
+          echo "📝 Accepting Licenses..."
+          yes | $SDKBIN --licenses --sdk_root=$MY_ANDROID_SDK > /dev/null
+          
+          echo "📦 Installing Android 35..."
+          # Kita install HANYA versi 35. Tidak ada versi 30 di sini.
+          yes | $SDKBIN --sdk_root=$MY_ANDROID_SDK "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+          
+          echo "✅ SDK Ready. Verifying contents:"
+          ls -lh $MY_ANDROID_SDK/build-tools/
 
-      # 4. Reset Project
+      # 3. Reset Project
       - name: Re-create Android Platform
         run: |
           rm -rf android
           flutter create . --project-name=komitan_kutter --org=com.komitan
 
-      # 5. Fix Gradle Wrapper (Force 8.1.1)
+      # 4. Fix Gradle Wrapper (8.2)
       - name: Fix Gradle Wrapper
         run: |
           mkdir -p android/gradle/wrapper
@@ -80,10 +81,10 @@ jobs:
           distributionPath=wrapper/dists
           zipStoreBase=GRADLE_USER_HOME
           zipStorePath=wrapper/dists
-          distributionUrl=https\://services.gradle.org/distributions/gradle-8.1.1-all.zip
+          distributionUrl=https\://services.gradle.org/distributions/gradle-8.2-all.zip
           EOF
 
-      # 6. Overwrite Root build.gradle (AGP 8.1.1)
+      # 5. Overwrite Root build.gradle (AGP 8.2.0)
       - name: Overwrite Root build.gradle
         run: |
           cat > android/build.gradle <<EOF
@@ -94,7 +95,7 @@ jobs:
                   mavenCentral()
               }
               dependencies {
-                  classpath 'com.android.tools.build:gradle:8.1.1'
+                  classpath 'com.android.tools.build:gradle:8.2.0'
                   classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:\$kotlin_version"
               }
           }
@@ -116,7 +117,7 @@ jobs:
           }
           EOF
 
-      # 7. Overwrite App build.gradle (Force SDK 35 & BuildTools 35.0.0)
+      # 6. Overwrite App build.gradle (Force SDK 35)
       - name: Overwrite App build.gradle
         run: |
           cat > android/app/build.gradle <<EOF
@@ -129,9 +130,7 @@ jobs:
           }
 
           def flutterRoot = localProperties.getProperty('flutter.sdk')
-          if (flutterRoot == null) {
-              throw new GradleException("Flutter SDK not found.")
-          }
+          if (flutterRoot == null) throw new GradleException("Flutter SDK not found.")
 
           def flutterVersionCode = localProperties.getProperty('flutter.versionCode')
           if (flutterVersionCode == null) flutterVersionCode = '1'
@@ -146,7 +145,6 @@ jobs:
           android {
               namespace "com.komitan.komitan_kutter"
               compileSdkVersion 35
-              // KUNCI: Jangan biarkan Gradle memilih sendiri!
               buildToolsVersion "35.0.0"
 
               compileOptions {
@@ -188,8 +186,8 @@ jobs:
           }
           EOF
 
-      # 8. Inject Permissions
-      - name: Inject Android Permissions
+      # 7. Inject Permissions
+      - name: Inject Permissions
         run: |
           cat > android/app/src/main/AndroidManifest.xml <<EOF
           <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.komitan.komitan_kutter">
@@ -225,15 +223,15 @@ jobs:
           </manifest>
           EOF
 
-      # 9. Build
+      # 8. Build
       - name: Build APK
         run: |
           flutter pub get
           flutter build apk --release --split-per-abi --verbose
 
-      # 10. Upload
+      # 9. Upload
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: KomitanKutter-Fixed
+          name: KomitanKutter-PrivateSDK
           path: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
