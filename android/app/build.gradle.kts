@@ -16,9 +16,7 @@ android {
     }
 
     kotlinOptions {
-        compilerOptions {
-            jvmTarget.set(JavaVersion.VERSION_11)
-        }
+        jvmTarget = "11"
     }
 
     defaultConfig {
@@ -32,7 +30,7 @@ android {
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.debug
+            signingConfig = signingConfigs.named("debug")
         }
     }
 }
