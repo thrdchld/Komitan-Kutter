@@ -13,7 +13,7 @@ jobs:
     name: Build APK (minSdk=30)
     runs-on: ubuntu-22.04
     env:
-      MY_SDK: ${{ github.workspace }}/custom-android-sdk
+      MY_SDK: /root/android-sdk-custom
 
     steps:
       - name: Checkout
@@ -30,91 +30,56 @@ jobs:
         with:
           flutter-version: '3.19.0'
 
-      - name: Setup Custom Android SDK 35 (cmdline-tools + platforms)
+      - name: Setup custom Android SDK 35
         run: |
           set -euo pipefail
           mkdir -p "$MY_SDK/cmdline-tools"
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmd.zip
           unzip -q cmd.zip -d "$MY_SDK/cmdline-tools"
-          # handle different zip layouts
           if [ -d "$MY_SDK/cmdline-tools/cmdline-tools" ]; then
             mv "$MY_SDK/cmdline-tools/cmdline-tools" "$MY_SDK/cmdline-tools/latest" || true
           else
             mkdir -p "$MY_SDK/cmdline-tools/latest"
             mv "$MY_SDK/cmdline-tools"/* "$MY_SDK/cmdline-tools/latest" 2>/dev/null || true
           fi
-          SDKMANAGER="$MY_SDK/cmdline-tools/latest/bin/sdkmanager"
           export PATH="$MY_SDK/cmdline-tools/latest/bin:$PATH"
-          # accept licenses and install required platform/build-tools
-          { yes | "$SDKMANAGER" --licenses --sdk_root="$MY_SDK" >/dev/null 2>&1 || true; }
-          { yes | "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0" "platform-tools" --sdk_root="$MY_SDK" >/dev/null 2>&1 || true; }
+          yes | sdkmanager --licenses --sdk_root="$MY_SDK" >/dev/null 2>&1 || true
+          yes | sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools" --sdk_root="$MY_SDK" >/dev/null 2>&1 || true
         shell: bash
 
-      - name: Create / regenerate Android project (flutter create)
+      - name: Create android project (flutter create)
         run: |
           set -euo pipefail
-          PROJECT_NAME="komitan_kutter"
-          ORG="com.komitan"
           rm -rf android
-          flutter create . --project-name "$PROJECT_NAME" --org "$ORG" --platforms=android
-          # Force use of our custom SDK in local.properties
+          flutter create . --platforms=android --project-name komitan_kutter --org com.komitan
           echo "sdk.dir=$MY_SDK" > android/local.properties
         shell: bash
 
-      - name: Enforce Android SDK versions (minSdk 30, compile/target 35)
+      - name: Enforce minSdkVersion=30, compile/target 35
         run: |
           set -euo pipefail
-          APP_BUILD="android/app/build.gradle"
+          APP_BUILD=android/app/build.gradle
           if [ ! -f "$APP_BUILD" ]; then
-            echo "ERROR: $APP_BUILD not found (flutter create may have failed)."
+            echo "ERROR: $APP_BUILD not found"
             exit 1
           fi
-
-          # Ensure minSdkVersion exists and is at least 30
           perl -0777 -pe '
-          # ensure defaultConfig exists with minSdkVersion 30
-          if (/defaultConfig\s*\{[^\}]*\}/s) {
-            # replace existing numeric minSdkVersion occurrences
             s/minSdkVersion\s*\d+/minSdkVersion 30/g;
-          } else {
-            # fallback: insert defaultConfig block (rare)
-            s/(android\s*\{)/$1\n    defaultConfig {\n        minSdkVersion 30\n    }\n/s;
-          }
-          # set compile/target SDK to 35 where present
-          s/compileSdkVersion\s*\d+/compileSdkVersion 35/g;
-          s/targetSdkVersion\s*\d+/targetSdkVersion 35/g;
-          # set buildToolsVersion if present
-          s/buildToolsVersion\s*\"[^\"]+\"/buildToolsVersion \"35.0.0\"/g;
-          ' -i "$APP_BUILD" || true
-
-          echo "=== android/app/build.gradle (relevant lines) ==="
-          sed -n '/android\s*{/,/}/p' "$APP_BUILD" | sed -n '1,160p' || true
+            s/compileSdkVersion\s*\d+/compileSdkVersion 35/g;
+            s/targetSdkVersion\s*\d+/targetSdkVersion 35/g;
+            s/buildToolsVersion\s*\"[^\"]+\"/buildToolsVersion "35.0.0"/g;
+          ' -i "$APP_BUILD"
+          sed -n '/defaultConfig/,/}/p' "$APP_BUILD" || true
         shell: bash
 
-      - name: Inject runtime/storage permissions (if manifest exists)
-        run: |
-          set -euo pipefail
-          MANIFEST=android/app/src/main/AndroidManifest.xml
-          if [ -f "$MANIFEST" ]; then
-            cp "$MANIFEST" "$MANIFEST.bak" || true
-            perl -0777 -pe 's|</manifest>|    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>\n    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>\n</manifest>|s' -i "$MANIFEST" || true
-            echo "Permissions injected (backup saved to $MANIFEST.bak)."
-          else
-            echo "Manifest not found; skipping permission injection."
-          fi
-        shell: bash
-
-      - name: Flutter doctor (diagnostics)
-        run: flutter doctor -v || true
-
-      - name: Get dependencies & build APK
+      - name: Flutter pub get & build
         run: |
           set -euo pipefail
           flutter pub get
           flutter build apk --release --split-per-abi --verbose
         shell: bash
 
-      - name: Upload built APK(s)
+      - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
           name: KomitanKutter-APK
