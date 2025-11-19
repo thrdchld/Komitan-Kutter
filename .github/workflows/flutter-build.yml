@@ -16,7 +16,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Java
+      - name: Setup Java (Temurin 17)
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
@@ -27,34 +27,60 @@ jobs:
         with:
           flutter-version: '3.19.0'
 
-      # 1. Install SDK 35 di Folder Kustom
+      - name: Show environment (debug)
+        run: |
+          echo "WORKSPACE: $GITHUB_WORKSPACE"
+          echo "MY_SDK: $MY_SDK"
+          java -version || true
+          flutter --version || true
+
+      # 1. Install SDK 35 di Folder Kustom (robust handling & avoid broken-pipe)
       - name: Setup Custom SDK 35
         run: |
           set -euo pipefail
           mkdir -p "$MY_SDK/cmdline-tools"
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmd.zip
           unzip -q cmd.zip -d "$MY_SDK/cmdline-tools"
-          # some zip layouts put contents in 'cmdline-tools/cmdline-tools'
+
+          # normalize folder layout (some zips include inner cmdline-tools directory)
           if [ -d "$MY_SDK/cmdline-tools/cmdline-tools" ]; then
             mv "$MY_SDK/cmdline-tools/cmdline-tools" "$MY_SDK/cmdline-tools/latest" || true
           else
-            # if extraction already produced 'latest' or other
+            mkdir -p "$MY_SDK/cmdline-tools/latest"
             mv "$MY_SDK/cmdline-tools"/* "$MY_SDK/cmdline-tools/latest" 2>/dev/null || true
           fi
 
-          export PATH="$MY_SDK/cmdline-tools/latest/bin:$PATH"
-          yes | sdkmanager --licenses --sdk_root="$MY_SDK" > /dev/null
-          yes | sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools" --sdk_root="$MY_SDK"
+          SDKMANAGER="$MY_SDK/cmdline-tools/latest/bin/sdkmanager"
 
-      # 2. Generate Project
-      - name: Create Project
+          if [ ! -x "$SDKMANAGER" ]; then
+            echo "⚠️ sdkmanager not found at $SDKMANAGER - listing directory for debug:"
+            ls -la "$MY_SDK/cmdline-tools" || true
+            exit 1
+          fi
+
+          export PATH="$MY_SDK/cmdline-tools/latest/bin:$PATH"
+
+          # Accept licenses: guard against 'yes' broken pipe causing set -e to fail
+          { yes | "$SDKMANAGER" --licenses --sdk_root="$MY_SDK" >/dev/null 2>&1 || true; }
+
+          # Install required platform & build-tools (ignore any early SIGPIPE from yes)
+          { yes | "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0" "platform-tools" --sdk_root="$MY_SDK" >/dev/null 2>&1 || true; }
+
+          echo "✅ SDK setup done. Listing installed platforms:"
+          "$SDKMANAGER" --list_installed || true
+
+      # 2. Create/Regenerate Android project & pin sdk.dir
+      - name: Create Project (regenerate android)
         run: |
           set -euo pipefail
+          # remove android to ensure consistent generated project
           rm -rf android
           flutter create . --platforms=android
           echo "sdk.dir=$MY_SDK" > android/local.properties
+          echo "Wrote android/local.properties ->"
+          cat android/local.properties || true
 
-      # 3. Config Gradle (Kotlin & SDK Version)
+      # 3. Config Gradle (Kotlin & SDK Version) - write files using here-docs (no expansion)
       - name: Config Gradle
         run: |
           set -euo pipefail
@@ -122,21 +148,29 @@ jobs:
           MANIFEST=android/app/src/main/AndroidManifest.xml
           if [ -f "$MANIFEST" ]; then
             cp "$MANIFEST" "$MANIFEST.bak"
-            # sisipkan permissions sebelum penutup </manifest>
             perl -0777 -pe 's|</manifest>|    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>\n    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>\n</manifest>|s' -i "$MANIFEST"
-            echo "Permissions injected (backup saved as $MANIFEST.bak). Note: consider READ_MEDIA_* on Android 13+ or using Android photo picker."
+            echo "Permissions injected (backup saved as $MANIFEST.bak)."
           else
             echo "⚠️ AndroidManifest.xml tidak ditemukan, melewati injeksi permission."
           fi
 
-      # 5. Build
+      # 4.5 (optional) Run flutter doctor -v to catch common environment issues early
+      - name: Flutter Doctor
+        run: |
+          set -euo pipefail
+          flutter doctor -v || true
+
+      # 5. Build APK
       - name: Build APK
         run: |
           set -euo pipefail
           flutter pub get
+          # optionally run a clean first if you want deterministic builds
+          flutter clean || true
+          flutter pub get
           flutter build apk --release --split-per-abi --verbose
 
-      # 6. Upload
+      # 6. Upload artifact
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
